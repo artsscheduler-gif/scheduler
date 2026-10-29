@@ -49,7 +49,7 @@ create function arts.check_booking(
 language plpgsql stable set search_path = '' as $$
 declare
   s arts.shop_settings;
-  v text[] := '{}';
+  v text[] := '{}'::text[];
   today date;
   hrs record;
   job int;
@@ -288,7 +288,7 @@ declare
   v_actor jsonb := coalesce(p -> 'actor', jsonb_build_object('type', 'system'));
   v_root_in uuid := nullif(p ->> 'root_id', '')::uuid;
   v_change text := nullif(p ->> 'change_kind', '');
-  v_exclude uuid[] := '{}';
+  v_exclude uuid[] := '{}'::uuid[];
   v_confirmed uuid;
   v_violations text[];
   v_customer arts.customers;
@@ -392,10 +392,10 @@ begin
       and (v_notes = '' or not s.notes_require_review)
       and not v_customer.always_review
       and (v_returning or not s.new_customers_require_review);
-    v_status := case when v_auto then 'confirmed' else 'requested' end;
+    v_status := case when v_auto then 'confirmed'::arts.booking_status else 'requested'::arts.booking_status end;
     if v_auto then
       v_level := case when exists (select 1 from arts.services sv where sv.id = any(v_services) and sv.approval_level = 'notify')
-                      then 'notify' else 'digest' end;
+                      then 'notify'::arts.approval_level else 'digest'::arts.approval_level end;
     else
       v_level := 'approve';
     end if;
@@ -449,7 +449,7 @@ declare
   b arts.bookings;
   before jsonb;
   is_change boolean;
-  v_violations text[] := '{}';
+  v_violations text[] := '{}'::text[];
   v_services uuid[];
   v_kind arts.booking_kind;
   v_start time;

@@ -1,0 +1,28 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm audit --audit-level=high
+      - run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,realtime,supavisor
+      - run: node scripts/write-local-env.mjs
+      - run: npx playwright install --with-deps chromium
+      - run: npx vitest run tests/unit tests/db
+      - name: Build (includes the client-bundle secret check)
+        run: npm run build

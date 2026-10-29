@@ -66,3 +66,16 @@ of them freely.
 46. **Postcard cost** is the `postcard_cost_cents` estimate. Lob's API doesn't return a per-piece price.
 47. **Default postcard templates** use type only: shop name, the configurable brand color, QR, phone. No logo or invented branding. Lob's HTML spec: 6.25×4.25in with bleed; the right half of the back is left clear for the address block.
 48. **Email provider: Resend. Print provider: Lob.** These are defaults behind the `EmailProvider` and `MailProvider` interfaces. Both run as stubs until keys exist (Open Items: compare current pricing and minimums before launch).
+
+## Phase 6: Import and launch
+
+49. **The Epicor export format is unknown.** The importer reads one CSV where each row is a service record. It maps columns through `import/epicor-mapping.json` (several candidate headers per field) and groups rows by Epicor customer ID, then email, then phone. If Epicor exports separate files, join them first or extend the mapping.
+50. **Normalization.** Phones become E.164 (US). Emails are lowercased and trimmed; invalid ones are dropped with a warning. Addresses get USPS-style uppercase and abbreviations, two-letter states, and 5 or 9 digit ZIPs (a 4-digit ZIP regains its leading zero). Names are title-cased.
+51. **Rejected:** rows with no name, or with no email, no phone, and no complete address. **Kept with a warning:** bad dates (that history row is dropped) and unmapped service types (history kept, no reminders).
+52. **Commit is idempotent per Epicor ID**, so a re-run skips customers already imported. Reports go to `import/private/` (gitignored, since it contains customer data).
+53. **Weekly backup** runs inside the daily job on Sundays (shop time). It goes to a private Supabase Storage bucket, AES-256-GCM encrypted, keeping 12 weeks. Restore is a script with a decrypt-only mode and an explicit `--apply --yes`.
+54. **Health endpoint** reports only true/false reachability for the DB, email provider, and print provider. An external uptime monitor does the "two failures in a row" alerting. Nothing in the app polls itself.
+55. **Pre-launch check** (`npm run prelaunch`) covers: required env vars, secret strength, no test keys, the anon lockdown against the target project, sign-up disabled, the Supabase security advisor (hosted API with `SUPABASE_ACCESS_TOKEN`, or local `supabase db lint`), npm audit, the client-bundle secret scan, live security headers, health, and SPF/DKIM/DMARC records. DMARC pass on a real send is a manual step, because this build never sends real email.
+56. **Not done because it needs accounts or money:** creating the hosted Supabase project, the Vercel project, the DNS records, Resend/Lob/Turnstile accounts, and the uptime monitor. All are documented step by step in README → Deploy.
+57. **Vercel Hobby is non-commercial.** This is a business site run as a commercial engagement. README flags deploying on Pro or under Art's account.
+58. **The "frontend-design" skill wasn't available in this environment.** The UI follows its intent without it: system font stack (no external font requests, which also keeps the CSP tight), a neutral placeholder palette with a single configurable brand color, large tap targets, one decision per screen, visible focus rings, and AA-contrast text.

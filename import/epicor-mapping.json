@@ -1,0 +1,32 @@
+{
+  "_comment": "Map our fields to Epicor export column headers. Several candidates per field are fine; the first header present wins. Confirm against a real Epicor export before committing (Open Items).",
+  "columns": {
+    "customer_id": ["Customer ID", "CustomerID", "Cust #", "Account"],
+    "name": ["Customer Name", "Name", "Full Name"],
+    "first_name": ["First Name", "FirstName"],
+    "last_name": ["Last Name", "LastName"],
+    "email": ["Email", "E-mail", "Email Address"],
+    "phone": ["Phone", "Cell", "Mobile", "Home Phone", "Primary Phone"],
+    "address1": ["Address", "Address 1", "Street", "Address1"],
+    "address2": ["Address 2", "Address2", "Apt"],
+    "city": ["City"],
+    "state": ["State", "ST"],
+    "zip": ["Zip", "ZIP", "Postal Code", "Zip Code"],
+    "vehicle_year": ["Year", "Vehicle Year"],
+    "vehicle_make": ["Make", "Vehicle Make"],
+    "vehicle_model": ["Model", "Vehicle Model"],
+    "service_date": ["Last Service Date", "Service Date", "Date"],
+    "service_type": ["Last Service Type", "Service", "Service Type", "Service Code"],
+    "mileage": ["Mileage", "Odometer"],
+    "email_opt_out": ["Email Opt Out", "No Email", "Do Not Email"],
+    "mail_opt_out": ["Mail Opt Out", "No Mail", "Do Not Mail"]
+  },
+  "services": {
+    "Lube Oil Filter": "Oil change",
+    "LOF": "Oil change",
+    "PA State Inspection": "State inspection",
+    "Rotate Tires": "Tire rotation"
+  },
+  "truthy": ["y", "yes", "true", "1", "x"],
+  "dateFormat": "MM/DD/YYYY"
+}

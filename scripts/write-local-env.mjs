@@ -21,6 +21,7 @@ const env = {
   BACKUP_ENCRYPTION_KEY: randomBytes(32).toString('hex'),
   // Cloudflare's published always-pass test keys.
   VITE_TURNSTILE_SITE_KEY: '1x00000000000000000000AA',
+  VITE_SHOP_PHONE: '(555) 010-0199', // placeholder
   TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA',
   EMAIL_PROVIDER: 'stub',
   RESEND_API_KEY: '',

@@ -1,0 +1,9 @@
+Customer ID,Customer Name,Email,Phone,Address,City,State,Zip,Year,Make,Model,Last Service Date,Last Service Type,Mileage,Email Opt Out,Mail Opt Out
+1001,JOHN MCDONALD,John.McDonald@Example.com ,(610) 555-0101,123 north main street,Easton,Pennsylvania,18042,2014,HONDA,Accord,03/15/2026,LOF,"84,211",,
+1001,JOHN MCDONALD,john.mcdonald@example.com,610-555-0101,123 North Main Street,Easton,PA,18042,2014,HONDA,Accord,09/02/2025,PA State Inspection,80100,,
+1002,Sara Lee,sara@example,6105550102,9 Elm Ave.,Bethlehem,PA,18015,2020,Toyota,RAV4,04/01/2026,Rotate Tires,,Y,
+1003,,nobody@example.com,,,,,,,,,,,,,
+1004,Pat Quiet,,,,,,,2011,Ford,Focus,01/10/2026,LOF,,,
+1005,Rita Moreno,rita@example.com,,44 Oak Road,Nazareth,PA,8064,2018,Subaru,Outback,13/45/2026,LOF,,,yes
+1006,Rita M.,RITA@example.com,610 555 0106,,,,,2019,Kia,Soul,02/02/2026,Wiper Blades,,,
+1007,Existing Ed,ed@example.com,6105550107,1 Ed St,Easton,PA,18042,2016,Jeep,Cherokee,05/05/2026,LOF,,,
