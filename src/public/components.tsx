@@ -1,0 +1,276 @@
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { api, ApiError, FALLBACK_PHONE, type PublicConfig, type Service } from './api';
+import { formatDate, formatTime } from '../../shared/time';
+
+export function telHref(phone: string) {
+  return `tel:${phone.replace(/[^\d+]/g, '')}`;
+}
+
+export function useConfig() {
+  const [config, setConfig] = useState<PublicConfig | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    api.config().then(setConfig).catch(() => setFailed(true));
+  }, []);
+  useEffect(() => {
+    if (config && /^#[0-9a-f]{6}$/i.test(config.brand_color)) {
+      document.documentElement.style.setProperty('--brand', config.brand_color);
+    }
+    if (config) document.title = `Book a service · ${config.shop_name}`;
+  }, [config]);
+  return { config, failed };
+}
+
+export function Shell({ config, step, children }: { config: PublicConfig | null; step?: number; children: ReactNode }) {
+  const phone = config?.shop_phone || FALLBACK_PHONE;
+  return (
+    <div className="public">
+      <header className="pub-header">
+        <div className="pub-header-inner">
+          {config?.logo_url ? (
+            <img src={config.logo_url} alt={config.shop_name} className="pub-logo" />
+          ) : (
+            <span className="pub-name">{config?.shop_name ?? ''}</span>
+          )}
+          {phone && (
+            <a className="pub-phone" href={telHref(phone)}>
+              <span aria-hidden="true">☎</span> {phone}
+            </a>
+          )}
+        </div>
+        {step !== undefined && (
+          <div className="progress" aria-label={`Step ${step} of 4`}>
+            {[1, 2, 3, 4].map((i) => (
+              <span key={i} className={i <= step ? 'on' : ''} />
+            ))}
+          </div>
+        )}
+      </header>
+      <main className="pub-main">{children}</main>
+    </div>
+  );
+}
+
+export function CallUs({ phone, reason }: { phone: string; reason?: string }) {
+  const p = phone || FALLBACK_PHONE;
+  return (
+    <div className="callus" role="alert">
+      <h2>{reason ?? 'We can’t book this online right now'}</h2>
+      {p ? (
+        <>
+          <p>Call us at <strong>{p}</strong> to book. We’ll get you in.</p>
+          <a className="btn primary big" href={telHref(p)}>Call {p}</a>
+        </>
+      ) : (
+        <p>Please call the shop to book.</p>
+      )}
+    </div>
+  );
+}
+
+export function isOutage(e: unknown) {
+  return !(e instanceof ApiError) || e.status === 0 || e.status >= 500 || e.status === 429;
+}
+
+export function ServicePicker({
+  services, selected, onChange,
+}: { services: Service[]; selected: string[]; onChange: (ids: string[]) => void }) {
+  return (
+    <fieldset className="choices">
+      <legend className="sr-only">Appointment type</legend>
+      {services.map((s) => {
+        const on = selected.includes(s.id);
+        return (
+          <label key={s.id} className={`choice ${on ? 'on' : ''}`}>
+            <input
+              type="checkbox"
+              checked={on}
+              onChange={() => onChange(on ? selected.filter((x) => x !== s.id) : [...selected, s.id])}
+            />
+            <span className="choice-body">
+              <span className="choice-title">{s.name}</span>
+              {s.description && <span className="choice-desc">{s.description}</span>}
+            </span>
+            <span className="check" aria-hidden="true" />
+          </label>
+        );
+      })}
+    </fieldset>
+  );
+}
+
+export function KindPicker({
+  waitAllowed, value, onChange, dropoffWindow,
+}: { waitAllowed: boolean; value: 'wait' | 'dropoff' | null; onChange: (k: 'wait' | 'dropoff') => void; dropoffWindow: [string, string] }) {
+  return (
+    <div className="choices" role="radiogroup" aria-label="Wait or drop off">
+      {waitAllowed && (
+        <button type="button" role="radio" aria-checked={value === 'wait'} className={`choice ${value === 'wait' ? 'on' : ''}`} onClick={() => onChange('wait')}>
+          <span className="choice-body">
+            <span className="choice-title">Wait</span>
+            <span className="choice-desc">Pick a time and wait at the shop while we work.</span>
+          </span>
+        </button>
+      )}
+      <button type="button" role="radio" aria-checked={value === 'dropoff'} className={`choice ${value === 'dropoff' ? 'on' : ''}`} onClick={() => onChange('dropoff')}>
+        <span className="choice-body">
+          <span className="choice-title">Drop off</span>
+          <span className="choice-desc">Bring it in between {dropoffWindow[0]} and {dropoffWindow[1]}. We’ll call when it’s ready.</span>
+        </span>
+      </button>
+      {!waitAllowed && <p className="muted small">Waiting isn’t available for this kind of work.</p>}
+    </div>
+  );
+}
+
+export interface Slot { date: string; kind: 'wait' | 'dropoff'; start_time: string | null }
+
+// Calendar of bookable days, then start times for waiters.
+export function SlotPicker({
+  serviceIds, kind, token, dropoffWindow, value, onChange, onOutage,
+}: {
+  serviceIds: string[]; kind: 'wait' | 'dropoff'; token?: string; dropoffWindow: [string, string];
+  value: Slot | null; onChange: (s: Slot | null) => void; onOutage: () => void;
+}) {
+  const [days, setDays] = useState<string[] | null>(null);
+  const [date, setDate] = useState<string | null>(value?.date ?? null);
+  const [times, setTimes] = useState<string[] | null>(null);
+  const timesRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setDays(null);
+    api.days(serviceIds, kind, token).then((r) => setDays(r.days)).catch(onOutage);
+  }, [serviceIds.join(','), kind, token]);
+
+  useEffect(() => {
+    if (!date || kind !== 'wait') return setTimes(null);
+    setTimes(null);
+    api.times(serviceIds, date, token).then((r) => {
+      setTimes(r.times);
+      requestAnimationFrame(() => timesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    }).catch(onOutage);
+  }, [date, kind, serviceIds.join(','), token]);
+
+  if (!days) return <p className="loading">Finding open days…</p>;
+  if (days.length === 0) return <p>No open days online for this. Please call us — we may still be able to fit you in.</p>;
+
+  const set = new Set(days);
+  const first = new Date(`${days[0]}T12:00:00Z`);
+  const last = new Date(`${days[days.length - 1]}T12:00:00Z`);
+  // Start grid on the Sunday on or before the first open day.
+  const start = new Date(first);
+  start.setUTCDate(start.getUTCDate() - start.getUTCDay());
+  const cells: string[] = [];
+  for (const d = new Date(start); d <= last || d.getUTCDay() !== 0; d.setUTCDate(d.getUTCDate() + 1)) {
+    cells.push(d.toISOString().slice(0, 10));
+  }
+  const weeks: string[][] = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+
+  function pickDay(d: string) {
+    setDate(d);
+    onChange(kind === 'dropoff' ? { date: d, kind, start_time: null } : null);
+  }
+
+  return (
+    <div className="slot-picker">
+      <table className="cal" role="grid" aria-label="Choose a day">
+        <thead>
+          <tr>{['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <th key={i} scope="col">{d}</th>)}</tr>
+        </thead>
+        <tbody>
+          {weeks.map((w, wi) => (
+            <tr key={wi}>
+              {w.map((d) => {
+                const dayNum = Number(d.slice(8));
+                const showMonth = dayNum === 1 || (wi === 0 && d === w[0]);
+                const open = set.has(d);
+                return (
+                  <td key={d}>
+                    {open ? (
+                      <button type="button" className={`day ${date === d ? 'on' : ''}`} onClick={() => pickDay(d)} aria-pressed={date === d} aria-label={formatDate(d)}>
+                        {showMonth && <span className="mon">{formatDate(d, { month: 'short' })}</span>}
+                        {dayNum}
+                      </button>
+                    ) : (
+                      <span className="day off" aria-hidden="true">
+                        {showMonth && <span className="mon">{formatDate(d, { month: 'short' })}</span>}
+                        {dayNum}
+                      </span>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {date && kind === 'dropoff' && (
+        <p className="pick-summary">
+          <strong>{formatDate(date)}</strong>
+          <br />Drop off between {dropoffWindow[0]} and {dropoffWindow[1]}.
+        </p>
+      )}
+      {date && kind === 'wait' && (
+        <div ref={timesRef} className="times-wrap">
+          <h3>{formatDate(date)}</h3>
+          {!times && <p className="loading">Loading times…</p>}
+          {times && times.length === 0 && <p>That day just filled up. Pick another day.</p>}
+          {times && times.length > 0 && (
+            <div className="times" role="radiogroup" aria-label="Start time">
+              {times.map((t) => {
+                const on = value?.date === date && value?.start_time === t;
+                return (
+                  <button key={t} type="button" role="radio" aria-checked={on} className={`time ${on ? 'on' : ''}`} onClick={() => onChange({ date, kind, start_time: t })}>
+                    {formatTime(t)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+declare global {
+  interface Window {
+    turnstile?: { render: (el: HTMLElement, opts: Record<string, unknown>) => string; remove: (id: string) => void; reset: (id: string) => void };
+  }
+}
+
+export function Turnstile({ onToken }: { onToken: (t: string | null) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let id: string | null = null;
+    let cancelled = false;
+    function render() {
+      if (cancelled || !ref.current || !window.turnstile) return;
+      id = window.turnstile.render(ref.current, {
+        sitekey: import.meta.env.VITE_TURNSTILE_SITE_KEY,
+        callback: (t: string) => onToken(t),
+        'expired-callback': () => onToken(null),
+        'error-callback': () => onToken(null),
+      });
+    }
+    if (window.turnstile) render();
+    else {
+      const existing = document.querySelector<HTMLScriptElement>('script[data-turnstile]');
+      const s = existing ?? document.createElement('script');
+      if (!existing) {
+        s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        s.async = true;
+        s.dataset.turnstile = '1';
+        document.head.appendChild(s);
+      }
+      s.addEventListener('load', render);
+    }
+    return () => {
+      cancelled = true;
+      if (id && window.turnstile) window.turnstile.remove(id);
+    };
+  }, []);
+  return <div ref={ref} className="turnstile" />;
+}

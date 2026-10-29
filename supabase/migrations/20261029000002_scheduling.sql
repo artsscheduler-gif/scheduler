@@ -410,7 +410,7 @@ begin
   insert into arts.bookings (
     id, root_id, replaces_booking_id, change_kind, customer_id, vehicle_id, date, kind, start_time,
     total_minutes, status, customer_notes, auto_confirmed, approval_level, decided_by, decided_at,
-    created_by_type, created_by, undo_until, created_at, updated_at
+    created_by_type, created_by, undo_until, created_at, updated_at, source
   ) values (
     v_id, coalesce(v_root_in, v_id), v_confirmed, v_change, v_customer.id, v_vehicle, v_date, v_kind, v_start,
     arts.job_minutes(v_services), v_status, v_notes, v_auto, v_level,
@@ -418,7 +418,7 @@ begin
     case when v_status = 'confirmed' then p_now end,
     v_by, nullif(p ->> 'created_by', '')::uuid,
     case when v_level = 'notify' then p_now + make_interval(hours => s.undo_window_hours) end,
-    p_now, p_now
+    p_now, p_now, nullif(p ->> 'source', '')
   );
   insert into arts.booking_services (booking_id, service_id) select v_id, unnest(v_services);
 

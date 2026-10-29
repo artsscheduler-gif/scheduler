@@ -147,6 +147,7 @@ create table arts.bookings (
   total_minutes int not null check (total_minutes > 0),
   status arts.booking_status not null,
   customer_notes text not null default '',
+  source text check (source ~ '^[a-z0-9_-]{1,40}$'), -- tracking parameter, e.g. postcard QR
   auto_confirmed boolean not null default false,
   approval_level arts.approval_level,
   decided_by uuid,

@@ -7,3 +7,6 @@ insert into arts.services (name, description, duration_minutes, wait_eligible, d
   ('Brakes', 'Brake inspection and repair', 180, false, 1, null, null, 4, '{BRK}'),
   ('Check engine light', 'Diagnose a warning light', 90, false, null, null, null, 5, '{DIAG}'),
   ('Something else', 'Tell us what''s going on and we''ll take a look', 60, false, null, null, null, 6, '{}');
+
+-- Local-only placeholder contact details (real values are an open item).
+update arts.shop_settings set shop_phone = '(555) 010-0199', shop_address = '123 Example St, Anytown, PA 18000', staff_notify_email = 'chris@example.com';

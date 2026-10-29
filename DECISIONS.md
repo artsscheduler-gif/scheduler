@@ -28,3 +28,15 @@ of them freely.
 17. **Undo returns an auto-confirmed booking to `requested`.** It goes back into the approval queue, the customer gets a "the shop is double-checking this one" email, and the type's counter resets.
 18. **"Returning customer"** means the customer has any service_history (including Epicor imports) or a completed booking.
 19. **Future-booking cap [3] counts distinct appointments** (root_id), so a pending change doesn't count twice. Admin bookings are exempt.
+
+## Phase 3: Public booking
+
+20. **Two token-gated endpoints beyond the five.** `GET /api/manage` (a read-only view for the holder of a valid manage link) and `POST /api/unsubscribe` (required by law for marketing email). Both reject anything without a valid HMAC token. `/api/health` and the cron and admin routes are not public-facing (secret or MFA-JWT gated).
+21. **The public booking response never reveals whether the customer already exists.** The page shows what a brand-new customer would see. Example: while "new customers require review" is on, a returning customer who was auto-confirmed sees "Request received", and their confirmation email arrives seconds later. A refusal that only applies to existing customers (the future-booking cap) looks exactly like an outage, which is the phone fallback.
+22. **Step 4 "optional notes" are vehicle notes** (color, plate) and are stored on `vehicles.notes`. That makes them the "plate notes" admin can search. Only the step 1 free-text box counts as customer notes for the review rule.
+23. **Manage tokens sign the appointment root, not a single row.** Change requests create new rows, and the link keeps working throughout. The token expires at the appointment start (drop-offs: the start of the drop-off window) at the time the email was sent.
+24. **Turnstile test keys.** Cloudflare's always-pass test keys are used locally and short-circuit server-side. The pre-launch check fails if a test secret is still configured.
+25. **`VITE_SHOP_PHONE` build-time fallback.** If the database is down, the page can't load the phone number from settings. The fallback screen uses this build-time value instead. It's the one place the phone exists outside the settings table, by necessity.
+26. **`?src=` tracking parameter** (e.g. `?src=postcard` from the QR code) is stored on `bookings.source` so postcard response can be measured.
+27. **Local dev uses `scripts/dev-api.ts`** to serve `/api/*` on port 3000 instead of `vercel dev`, so no Vercel project link is needed during the build.
+28. **End-to-end tests use Playwright** at a 375px viewport against the running dev servers. They skip when the servers aren't up.
