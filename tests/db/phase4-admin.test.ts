@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
-import { sql, service, resetData, serviceId, weekdayAhead, adminToken, reqWith } from './helpers';
+import { sql, resetData, serviceId, weekdayAhead, adminToken, reqWith } from './helpers';
 import { adminAction } from '../../server/admin';
 import { postBook } from '../../server/public';
 import { tick } from '../../server/jobs';

@@ -52,3 +52,17 @@ of them freely.
 35. **CSV export guards against formula injection.** Cells starting with `= + - @` get a leading `'`. Export is audited.
 36. **A new closure does not cancel existing bookings on that date.** The admin is told to check the day view. Silently cancelling customers is worse than a visible conflict.
 37. **Admin pages are wired, not mocked.** Approvals (ladder plus auto-confirm rate by week and type), Activity (audit log, reminder sends, emails, job runs), Customers (search by name/phone/email/plate, edit, flags, merge, history), Settings (every shop knob), Export.
+
+## Phase 5: Reminders
+
+38. **Due cycle** means the latest completed date per customer + vehicle + service, plus that service's interval. Each rule step fires at most once per cycle, enforced by a unique index.
+39. **Catch-up rule.** If several steps are already past (e.g. on the first run after the Epicor import), only the latest one fires and the earlier ones are logged as `skipped`. Items more than `reminder_max_overdue_days` (365) overdue are ignored, so years-old history doesn't trigger a wave of mail.
+40. **"Stop when the customer books"** means any requested, confirmed, or completed booking created after the service date that made them due. Each step's condition (no booking since due / since the previous step) is also checked.
+41. **Opt-outs are per channel.** Opting out of email still allows postcards, and vice versa. Bounced email and undeliverable addresses block their channel. A postcard batched before an opt-out is still skipped at send time.
+42. **Dry-run rows count as done.** During the cutover, steps logged as `dry_run` are not re-sent after the switch, because Epicor already covered that cycle. Turning dry-run off only affects future steps.
+43. **Failed sends retry the next day.** A `failed` step is not "done". Email uses 3 tries with backoff inside a run.
+44. **Appointment reminder [48h] runs on the daily job.** It covers confirmed bookings 1 to ceil(48/24) = 2 days out, once each. Moving a booking clears the flag, so the new time is reminded.
+45. **Weekly postcard batches.** The daily job adds postcards to the current week's draft batch. Approving a batch verifies each address with the provider first; an undeliverable address flags the customer and skips them. Auto-approve (off by default) sends draft batches from earlier weeks.
+46. **Postcard cost** is the `postcard_cost_cents` estimate. Lob's API doesn't return a per-piece price.
+47. **Default postcard templates** use type only: shop name, the configurable brand color, QR, phone. No logo or invented branding. Lob's HTML spec: 6.25×4.25in with bleed; the right half of the back is left clear for the address block.
+48. **Email provider: Resend. Print provider: Lob.** These are defaults behind the `EmailProvider` and `MailProvider` interfaces. Both run as stubs until keys exist (Open Items: compare current pricing and minimums before launch).
