@@ -40,3 +40,15 @@ of them freely.
 26. **`?src=` tracking parameter** (e.g. `?src=postcard` from the QR code) is stored on `bookings.source` so postcard response can be measured.
 27. **Local dev uses `scripts/dev-api.ts`** to serve `/api/*` on port 3000 instead of `vercel dev`, so no Vercel project link is needed during the build.
 28. **End-to-end tests use Playwright** at a 375px viewport against the running dev servers. They skip when the servers aren't up.
+
+## Phase 4: Admin console
+
+29. **One admin endpoint, `/api/admin/[action]`.** It validates the Supabase JWT server-side, then requires role owner/staff **and** `aal2`. One dynamic route keeps the deployment well under Vercel Hobby's 12-function limit (10 functions total).
+30. **Admin drag-to-move** works on the day timeline. Drag a waiter across or between lanes to change the time. Drag one onto the drop-off list to make it a drop-off, or drag a drop-off onto a lane to make it a waiter. A broken rule opens the override confirm. Lanes are a display packing (greedy by start time). The data model has no lane column, matching the spec's "shop sequences them on the floor."
+31. **Admin moves email the customer** the new time (with a manage link) by default.
+32. **Escalation timing uses shop hours.** "4 business hours" counts only open hours, skipping closures. "1 business day" is the same wall-clock time on the next open day. Escalations run from an hourly `tick` job.
+33. **Hourly tick on Vercel Hobby.** Hobby cron runs at most once a day. `vercel.json` schedules only the daily job. The hourly `tick` is triggered by Supabase `pg_cron` + `pg_net` calling `/api/cron/tick` with the cron secret (setup SQL in README). If the project moves to Vercel Pro, the tick can move into `vercel.json`.
+34. **Customer merge** moves bookings, vehicles, history, reminder sends, and the email log to the kept record. Opt-outs and flags are OR'd so nobody who opted out on either record gets contacted. The merged record is kept (pointing at the survivor), with its email and phone cleared so it never matches again.
+35. **CSV export guards against formula injection.** Cells starting with `= + - @` get a leading `'`. Export is audited.
+36. **A new closure does not cancel existing bookings on that date.** The admin is told to check the day view. Silently cancelling customers is worse than a visible conflict.
+37. **Admin pages are wired, not mocked.** Approvals (ladder plus auto-confirm rate by week and type), Activity (audit log, reminder sends, emails, job runs), Customers (search by name/phone/email/plate, edit, flags, merge, history), Settings (every shop knob), Export.

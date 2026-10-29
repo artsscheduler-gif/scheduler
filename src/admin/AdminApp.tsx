@@ -1,4 +1,24 @@
+import { NavLink, Route, Routes } from 'react-router';
 import { AuthGate, signOut } from './AuthGate';
+import { DayView } from './DayView';
+import { BookingForm } from './BookingForm';
+import { Customers } from './Customers';
+import { Settings } from './Settings';
+import { Approvals } from './Approvals';
+import { Postcards } from './Postcards';
+import { Activity } from './Activity';
+import { Export } from './Export';
+
+const NAV: [string, string][] = [
+  ['/admin', 'Day'],
+  ['/admin/book', 'Phone booking'],
+  ['/admin/customers', 'Customers'],
+  ['/admin/approvals', 'Approvals'],
+  ['/admin/postcards', 'Postcards'],
+  ['/admin/settings', 'Settings'],
+  ['/admin/activity', 'Activity'],
+  ['/admin/export', 'Export'],
+];
 
 export default function AdminApp() {
   return (
@@ -6,10 +26,27 @@ export default function AdminApp() {
       {(session) => (
         <div className="admin">
           <header className="admin-top">
-            <strong>Art’s Service Center</strong>
-            <span className="muted">{session.user.email}</span>
+            <strong className="admin-brand">Art’s Service Center</strong>
+            <nav aria-label="Admin">
+              {NAV.map(([to, label]) => (
+                <NavLink key={to} to={to} end={to === '/admin'} className={({ isActive }) => (isActive ? 'on' : '')}>{label}</NavLink>
+              ))}
+            </nav>
+            <span className="muted small push">{session.user.email}</span>
             <button className="btn small" onClick={signOut}>Sign out</button>
           </header>
+          <main className="admin-main">
+            <Routes>
+              <Route index element={<DayView />} />
+              <Route path="book" element={<div className="narrow-page"><h2>Phone booking</h2><BookingForm /></div>} />
+              <Route path="customers" element={<Customers />} />
+              <Route path="approvals" element={<Approvals />} />
+              <Route path="postcards" element={<Postcards />} />
+              <Route path="settings" element={<Settings />} />
+              <Route path="activity" element={<Activity />} />
+              <Route path="export" element={<Export />} />
+            </Routes>
+          </main>
         </div>
       )}
     </AuthGate>
