@@ -1,0 +1,168 @@
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
+
+type Stage =
+  | { kind: 'loading' }
+  | { kind: 'signin' }
+  | { kind: 'set-password' }
+  | { kind: 'enroll'; factorId: string; qr: string; secret: string }
+  | { kind: 'challenge'; factorId: string }
+  | { kind: 'denied' }
+  | { kind: 'ready'; session: Session };
+
+const LOGIN_AT_KEY = 'arts.admin.verifiedAt';
+
+function readLoginAt(): number {
+  try {
+    return Number(localStorage.getItem(LOGIN_AT_KEY) ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+function writeLoginAt(v: number | null) {
+  try {
+    if (v === null) localStorage.removeItem(LOGIN_AT_KEY);
+    else localStorage.setItem(LOGIN_AT_KEY, String(v));
+  } catch {
+    // Storage blocked: the server-side session timebox still applies.
+  }
+}
+
+export async function signOut() {
+  writeLoginAt(null);
+  await supabase.auth.signOut();
+}
+
+export function AuthGate({ children }: { children: (session: Session) => ReactNode }) {
+  const [stage, setStage] = useState<Stage>({ kind: 'loading' });
+  const [error, setError] = useState('');
+
+  async function resolve() {
+    setError('');
+    const { data } = await supabase.auth.getSession();
+    const session = data.session;
+    if (!session) return setStage({ kind: 'signin' });
+
+    const role = session.user.app_metadata?.role;
+    if (role !== 'owner' && role !== 'staff') return setStage({ kind: 'denied' });
+
+    const hash = window.location.hash;
+    if (/type=(invite|recovery)/.test(hash)) return setStage({ kind: 'set-password' });
+
+    const aal = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal.data?.currentLevel === 'aal2') {
+      const { data: s } = await supabase.from('shop_settings').select('session_timeout_hours').eq('id', 1).single();
+      const limitMs = (s?.session_timeout_hours ?? 12) * 3600_000;
+      const at = readLoginAt();
+      if (!at || Date.now() - at > limitMs) {
+        await signOut();
+        return setStage({ kind: 'signin' });
+      }
+      return setStage({ kind: 'ready', session });
+    }
+
+    const factors = await supabase.auth.mfa.listFactors();
+    const totp = factors.data?.totp.find((f) => f.status === 'verified');
+    if (totp) return setStage({ kind: 'challenge', factorId: totp.id });
+
+    // Clean up abandoned enrollments, then start a fresh one.
+    for (const f of factors.data?.all ?? []) {
+      if (f.status !== 'verified') await supabase.auth.mfa.unenroll({ factorId: f.id });
+    }
+    const enroll = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: `Authenticator ${new Date().toISOString().slice(0, 10)}` });
+    if (enroll.error) return setError(enroll.error.message);
+    setStage({ kind: 'enroll', factorId: enroll.data.id, qr: enroll.data.totp.qr_code, secret: enroll.data.totp.secret });
+  }
+
+  useEffect(() => {
+    resolve();
+    const { data } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') setStage({ kind: 'signin' });
+    });
+    const timer = setInterval(() => {
+      const at = readLoginAt();
+      if (at && Date.now() - at > 12 * 3600_000) signOut();
+    }, 60_000);
+    return () => {
+      data.subscription.unsubscribe();
+      clearInterval(timer);
+    };
+  }, []);
+
+  async function onSignIn(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const { error } = await supabase.auth.signInWithPassword({ email: String(f.get('email')), password: String(f.get('password')) });
+    if (error) return setError('Email or password is incorrect.');
+    resolve();
+  }
+
+  async function onSetPassword(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const pw = String(new FormData(e.currentTarget).get('password'));
+    if (pw.length < 12) return setError('Use at least 12 characters.');
+    const { error } = await supabase.auth.updateUser({ password: pw });
+    if (error) return setError(error.message);
+    history.replaceState(null, '', window.location.pathname);
+    resolve();
+  }
+
+  async function onCode(e: FormEvent<HTMLFormElement>, factorId: string) {
+    e.preventDefault();
+    const code = String(new FormData(e.currentTarget).get('code')).replace(/\s/g, '');
+    const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId, code });
+    if (error) return setError('That code didn’t work. Codes change every 30 seconds — try the current one.');
+    writeLoginAt(Date.now());
+    resolve();
+  }
+
+  if (stage.kind === 'ready') return <>{children(stage.session)}</>;
+
+  return (
+    <main className="auth">
+      <div className="auth-card">
+        <h1>Art’s Service Center · Admin</h1>
+        {stage.kind === 'loading' && <p>Loading…</p>}
+        {stage.kind === 'signin' && (
+          <form onSubmit={onSignIn}>
+            <label>Email<input name="email" type="email" autoComplete="username" required /></label>
+            <label>Password<input name="password" type="password" autoComplete="current-password" required /></label>
+            <button className="btn primary">Sign in</button>
+            <p className="muted">Admin access is by invitation only.</p>
+          </form>
+        )}
+        {stage.kind === 'set-password' && (
+          <form onSubmit={onSetPassword}>
+            <p>Choose a password for your admin account.</p>
+            <label>New password<input name="password" type="password" autoComplete="new-password" minLength={12} required /></label>
+            <button className="btn primary">Save password</button>
+          </form>
+        )}
+        {stage.kind === 'enroll' && (
+          <form onSubmit={(e) => onCode(e, stage.factorId)}>
+            <p>Two-step sign-in is required. Scan this with an authenticator app (Google Authenticator, 1Password, Authy), then enter the 6-digit code.</p>
+            <img className="qr" src={stage.qr} alt="Authenticator QR code" width={180} height={180} />
+            <p className="muted small">Can’t scan? Enter this key: <code>{stage.secret}</code></p>
+            <label>6-digit code<input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" required /></label>
+            <button className="btn primary">Verify</button>
+          </form>
+        )}
+        {stage.kind === 'challenge' && (
+          <form onSubmit={(e) => onCode(e, stage.factorId)}>
+            <label>6-digit code from your authenticator app<input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" autoFocus required /></label>
+            <button className="btn primary">Verify</button>
+          </form>
+        )}
+        {stage.kind === 'denied' && (
+          <>
+            <p>This account doesn’t have admin access.</p>
+            <button className="btn" onClick={signOut}>Sign out</button>
+          </>
+        )}
+        {error && <p className="error" role="alert">{error}</p>}
+      </div>
+    </main>
+  );
+}
