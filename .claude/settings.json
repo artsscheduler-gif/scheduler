@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Edit(./**)",
+      "Write(./**)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(git:*)",
+      "Bash(vercel:*)",
+      "Bash(supabase:*)",
+      "Bash(gh:*)",
+      "Bash(curl:*)",
+      "Bash(dig:*)"
+    ]
+  }
+}

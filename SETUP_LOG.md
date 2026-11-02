@@ -6,7 +6,7 @@ Run 1: 2026-11-02, on Jake's Mac. Secrets are never written here (first 6 charac
 
 | Step | Result |
 |---|---|
-| Write `.claude/settings.json` | **Blocked.** The Claude Code auto-mode safety check refuses to let the agent write its own permission rules ("Self-Modification"). Same as the original build. Ran without it. Manual item. |
+| Write `.claude/settings.json` | **Blocked; later done by Jake** (copied in by hand 2026-11-02, verified, committed). The Claude Code auto-mode safety check refuses to let the agent write its own permission rules ("Self-Modification"). Same as the original build. Ran without it. Manual item. |
 | Git remote | **Missing; added.** No remote was configured. `artsscheduler-gif/scheduler` exists on GitHub and is **empty and PUBLIC**. Added it as `origin` (local config only). **Nothing pushed**, because the runbook doesn't ask for a push. |
 | Working tree | Clean at start (HEAD `0802d34`). |
 | `.env*` ignored | Pass. `.env`, `.env.local`, `.env.staging.local`, `.env.production.local` are ignored by `.env.*`; only `.env.example` is tracked. |

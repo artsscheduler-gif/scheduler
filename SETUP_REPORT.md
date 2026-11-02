@@ -13,7 +13,7 @@
 
 | Phase | Check | Result |
 |---|---|---|
-| 0 | `.claude/settings.json` written | **FAIL**: blocked by the Claude Code safety check (manual item 1) |
+| 0 | `.claude/settings.json` written | **DONE by Jake** (2026-11-02): the safety check blocked the agent, so Jake copied it in; verified valid, 10 rules |
 | 0 | Git remote is `artsscheduler-gif/scheduler` | **FIXED**: was missing; added as `origin`. Repo is empty and **public** (manual item 3) |
 | 0 | Working tree clean | PASS |
 | 0 | `.env*` gitignored except `.env.example` | PASS |
@@ -69,10 +69,7 @@ Full detail in `SETUP_LOG.md`. In short:
 
 ## Manual items for Jake
 
-1. **Add the Claude Code permissions file yourself** (the agent isn't allowed to write its own permissions). Create `.claude/settings.json` in the repo with:
-   ```json
-   { "permissions": { "allow": ["Edit(./**)", "Write(./**)", "Bash(npm:*)", "Bash(npx:*)", "Bash(git:*)", "Bash(vercel:*)", "Bash(supabase:*)", "Bash(gh:*)", "Bash(curl:*)", "Bash(dig:*)"] } }
-   ```
+1. ~~**Add the Claude Code permissions file yourself.**~~ **Done 2026-11-02.** `.claude/settings.json` is committed with the 10 rules the runbook asked for.
 2. **Fill in `.env.staging.local`** (already created, gitignored; each line says where the value lives), then re-run the runbook. Minimum to get past Phase 2:
    - all six Supabase lines
    - `VERCEL_TOKEN`, `VERCEL_SCOPE` (team slug from `vercel.com/<slug>`), `VERCEL_PROJECT`
