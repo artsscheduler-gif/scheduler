@@ -12,7 +12,7 @@ export const service = createClient<any, 'arts'>(process.env.SUPABASE_URL!, proc
 // Wipes transactional data and restores default settings + seed services.
 export async function resetData() {
   await sql`truncate arts.audit_log, arts.email_log, arts.reminder_sends, arts.mail_batches, arts.service_history,
-    arts.booking_services, arts.bookings, arts.vehicles, arts.customers, arts.closures, arts.rate_limits, arts.job_runs cascade`;
+    arts.booking_services, arts.bookings, arts.vehicles, arts.customers, arts.closures, arts.rate_limits, arts.job_runs, arts.email_outbox cascade`;
   await sql`delete from arts.shop_settings`;
   await sql`insert into arts.shop_settings (id) values (1)`;
   await sql`truncate arts.reminder_rules, arts.services cascade`;

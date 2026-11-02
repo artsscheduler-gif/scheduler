@@ -18,14 +18,15 @@ See `DECISIONS.md` for every judgment call made during the build.
 1. [How it fits together](#how-it-fits-together)
 2. [Local development](#local-development)
 3. [Tests](#tests)
-4. [Deploy (first time)](#deploy-first-time)
-5. [Add or remove an admin user](#add-or-remove-an-admin-user)
-6. [Rotate keys](#rotate-keys)
-7. [Backups and restore](#backups-and-restore)
-8. [Epicor import and cutover](#epicor-import-and-cutover)
-9. [Routine tasks (Chris)](#routine-tasks-chris)
-10. [When something breaks](#when-something-breaks)
-11. [Launch checklist](#launch-checklist)
+4. [Staging (Outbox and Simulator)](#staging-outbox-and-simulator)
+5. [Deploy (first time)](#deploy-first-time)
+6. [Add or remove an admin user](#add-or-remove-an-admin-user)
+7. [Rotate keys](#rotate-keys)
+8. [Backups and restore](#backups-and-restore)
+9. [Epicor import and cutover](#epicor-import-and-cutover)
+10. [Routine tasks (Chris)](#routine-tasks-chris)
+11. [When something breaks](#when-something-breaks)
+12. [Launch checklist](#launch-checklist)
 
 ---
 
@@ -91,8 +92,41 @@ npx vitest run tests/e2e # Playwright: full booking at 375px, admin with real TO
 | 4 Admin | `tests/db/phase4-admin.test.ts`, `tests/e2e/phase4-admin.test.ts` |
 | 5 Reminders | `tests/db/phase5-reminders.test.ts` |
 | 6 Ops | `tests/unit/import.test.ts`, `tests/db/phase6-*.test.ts`, `tests/unit/secret-scan.test.ts` |
+| Staging | `tests/db/staging.test.ts`, `tests/e2e/staging.test.ts` (runs only against a staging build) |
 
 CI (`.github/workflows/ci.yml`) runs typecheck, audit, unit and DB tests, and the build on every push and PR. Dependabot opens weekly update PRs, which must pass CI.
+
+---
+
+## Staging (Outbox and Simulator)
+
+A staging copy (planned: `arts.jvtestspace.com`) runs the same code with three switches:
+
+| Variable | Value | Effect |
+|---|---|---|
+| `APP_ENV` | `staging` | Server accepts the Outbox and Simulator admin actions. Without it they return 404. |
+| `EMAIL_PROVIDER` | `capture` | Every email is saved to `arts.email_outbox` instead of being sent. |
+| `VITE_APP_ENV` | `staging` | Build shows a red TEST SITE bar, adds `noindex`, and adds the **Outbox** and **Simulator** admin tabs. |
+
+Use Turnstile test keys and `MAIL_PROVIDER=stub` (or a Lob `test_` key, which renders postcards in Lob's dashboard without mailing). **Never set any of these three in production.** `npm run prelaunch` fails if they are.
+
+Run it locally:
+
+```bash
+npm run staging:api    # instead of dev:api
+npm run staging:web    # instead of dev
+```
+
+**Outbox** lists every captured email, newest first, with a filter. Click one to see it as the recipient would (HTML or plain text). Emails made by a fast-forward are labeled with the simulated date.
+
+**Simulator**:
+
+1. **Add customers.** Fake customers with vehicles and past service, as if imported from Epicor. Their due dates fall between 60 days ago and about 75 days ahead. All of them use `@sim.invalid` email addresses (a domain that can never receive mail) and fictional `555-01xx` phone numbers.
+2. **Add requests.** Booking requests placed through the same database function and emails as the public form (Turnstile and rate limits skipped). Approve or decline them in Approvals.
+3. **Fast-forward.** Runs the daily job and the escalation check for each day, as if that day had arrived. Dry-run stays on in Settings; the "Send reminders anyway" box overrides it for the simulation only. The first simulated day sends a burst: as in a real first run after the import, overdue customers get only their latest reminder step and the earlier steps are logged as skipped.
+4. **Reset simulated data** deletes every `@sim.invalid` customer and everything attached to them. Other customers are untouched. **Clear outbox** empties the Outbox.
+
+Reminders already sent are recorded, so fast-forwarding the same days twice doesn't send twice. To start over, reset and clear.
 
 ---
 

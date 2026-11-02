@@ -40,6 +40,11 @@ await step('Secrets are strong', () => {
   return weak.length ? ['FAIL', `weak: ${weak.join(', ')}`] : ['PASS', ''];
 });
 
+await step('Not a staging configuration', () => {
+  const bad = [E.APP_ENV === 'staging' && 'APP_ENV=staging', E.VITE_APP_ENV === 'staging' && 'VITE_APP_ENV=staging', E.EMAIL_PROVIDER === 'capture' && 'EMAIL_PROVIDER=capture'].filter(Boolean);
+  return bad.length ? ['FAIL', `${bad.join(', ')} (Simulator and Outbox would be live)`] : ['PASS', ''];
+});
+
 await step('Turnstile uses real keys', () =>
   /^[123]x0000/.test(E.TURNSTILE_SECRET_KEY ?? '') || /^[123]x0000/.test(E.VITE_TURNSTILE_SITE_KEY ?? '')
     ? ['FAIL', 'Cloudflare test key configured']

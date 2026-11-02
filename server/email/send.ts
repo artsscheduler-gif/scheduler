@@ -20,6 +20,7 @@ export async function sendEmail(settings: ShopSettings, o: SendOpts): Promise<bo
   const p = emailProvider();
   const r = await withRetry(
     () => p.send({
+      kind: o.kind,
       to: o.to!,
       from: `${settings.from_name} <${settings.from_email}>`,
       subject: o.subject,
@@ -37,7 +38,7 @@ export async function sendEmail(settings: ShopSettings, o: SendOpts): Promise<bo
     to_email: o.to,
     booking_id: o.bookingId ?? null,
     customer_id: o.customerId ?? null,
-    status: r.error ? 'failed' : p.name === 'stub' ? 'stubbed' : 'sent',
+    status: r.error ? 'failed' : p.name === 'stub' ? 'stubbed' : p.name === 'capture' ? 'captured' : 'sent',
     provider_id: r.value?.id ?? null,
     cost_cents: r.value?.costCents ?? null,
     error: r.error?.message?.slice(0, 500) ?? null,

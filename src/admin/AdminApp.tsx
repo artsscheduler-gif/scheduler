@@ -8,6 +8,9 @@ import { Approvals } from './Approvals';
 import { Postcards } from './Postcards';
 import { Activity } from './Activity';
 import { Export } from './Export';
+import { Outbox } from './Outbox';
+import { Simulator } from './Simulator';
+import { STAGING } from '../lib/env';
 
 const NAV: [string, string][] = [
   ['/admin', 'Day'],
@@ -18,6 +21,7 @@ const NAV: [string, string][] = [
   ['/admin/settings', 'Settings'],
   ['/admin/activity', 'Activity'],
   ['/admin/export', 'Export'],
+  ...(STAGING ? [['/admin/outbox', 'Outbox'], ['/admin/simulator', 'Simulator']] as [string, string][] : []),
 ];
 
 export default function AdminApp() {
@@ -45,6 +49,8 @@ export default function AdminApp() {
               <Route path="settings" element={<Settings />} />
               <Route path="activity" element={<Activity />} />
               <Route path="export" element={<Export />} />
+              {STAGING && <Route path="outbox" element={<Outbox />} />}
+              {STAGING && <Route path="simulator" element={<Simulator />} />}
             </Routes>
           </main>
         </div>

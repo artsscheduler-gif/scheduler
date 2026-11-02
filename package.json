@@ -19,7 +19,9 @@
     "admin:add": "tsx scripts/add-admin.ts",
     "backup:restore": "tsx scripts/restore-backup.ts",
     "prelaunch": "tsx scripts/prelaunch-check.ts",
-    "dev:api": "tsx watch scripts/dev-api.ts"
+    "dev:api": "tsx watch scripts/dev-api.ts",
+    "staging:api": "APP_ENV=staging EMAIL_PROVIDER=capture tsx watch scripts/dev-api.ts",
+    "staging:web": "VITE_APP_ENV=staging vite"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

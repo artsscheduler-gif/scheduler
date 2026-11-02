@@ -11,6 +11,7 @@ import * as T from './email/templates.js';
 import { normalizePhone, normalizeEmail } from '../shared/phone.js';
 import { toCsv, EXPORTS } from './export.js';
 import { approveBatch, postcardPreview } from './reminders.js';
+import { simulatorAction } from './simulator.js';
 
 export interface Admin { id: string; email: string; role: 'owner' | 'staff'; label: string }
 
@@ -393,6 +394,7 @@ async function resendManage(a: Admin, body: unknown): Promise<Result> {
 
 export async function adminAction(req: Req, action: string, body: unknown): Promise<Result> {
   const a = await requireAdmin(req);
+  if (action.startsWith('sim-') || action === 'outbox-clear') return simulatorAction(a, action, body);
   switch (action) {
     case 'decide': return decide(a, body);
     case 'check': return check(body);

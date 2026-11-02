@@ -1,6 +1,8 @@
 import { env } from '../env.js';
+import { db } from '../db.js';
 
 export interface EmailMessage {
+  kind?: string; // email_log kind; providers that deliver ignore it
   to: string;
   from: string;
   subject: string;
@@ -75,11 +77,37 @@ export class StubEmailProvider implements EmailProvider {
   }
 }
 
+// Staging: stores each message in arts.email_outbox for the admin Outbox tab.
+// Never delivers anything.
+export class CaptureEmailProvider implements EmailProvider {
+  name = 'capture';
+
+  async send(msg: EmailMessage): Promise<SendResult> {
+    const { data, error } = await db().from('email_outbox').insert({
+      kind: msg.kind ?? null,
+      to_email: msg.to,
+      from_email: msg.from,
+      subject: msg.subject,
+      html: msg.html,
+      text: msg.text,
+      attachments: msg.attachments?.map((a) => a.filename) ?? [],
+    }).select('id').single();
+    if (error) throw new Error(`capture: ${error.message}`);
+    return { id: data.id, costCents: 0 };
+  }
+
+  async ping() {
+    return true;
+  }
+}
+
 let provider: EmailProvider | null = null;
 
 export function emailProvider(): EmailProvider {
   if (!provider) {
-    provider = env.emailProvider === 'resend' && env.resendKey ? new ResendProvider(env.resendKey) : new StubEmailProvider();
+    provider = env.emailProvider === 'resend' && env.resendKey ? new ResendProvider(env.resendKey)
+      : env.emailProvider === 'capture' ? new CaptureEmailProvider()
+      : new StubEmailProvider();
   }
   return provider;
 }

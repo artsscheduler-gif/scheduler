@@ -190,6 +190,7 @@ export async function runServiceReminders(s: ShopSettings, on: string) {
       const unsub = unsubscribeUrl(c.id);
       const provider = emailProvider();
       const res = await withRetry(() => provider.send({
+        kind: `service_due_step${p.rule.step}`,
         to: c.email!, from: `${s.from_name} <${s.from_email}>`, replyTo: s.from_email, ...r,
         headers: { 'List-Unsubscribe': `<${unsub}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
       }), 3, process.env.VITEST ? 1 : 500);

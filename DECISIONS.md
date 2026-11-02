@@ -79,3 +79,14 @@ of them freely.
 56. **Not done because it needs accounts or money:** creating the hosted Supabase project, the Vercel project, the DNS records, Resend/Lob/Turnstile accounts, and the uptime monitor. All are documented step by step in README → Deploy.
 57. **Vercel Hobby is non-commercial.** This is a business site run as a commercial engagement. README flags deploying on Pro or under Art's account.
 58. **The "frontend-design" skill wasn't available in this environment.** The UI follows its intent without it: system font stack (no external font requests, which also keeps the CSP tight), a neutral placeholder palette with a single configurable brand color, large tap targets, one decision per screen, visible focus rings, and AA-contrast text.
+
+## Staging (added 2026-11-02)
+
+59. **Staging uses the same code, switched by env vars**, not a separate branch or app: `APP_ENV=staging` (server), `VITE_APP_ENV=staging` (client), `EMAIL_PROVIDER=capture`. Both halves must be set: the client flag only shows the tabs; the server refuses the actions without its own flag. The pre-launch check fails if any of the three is set.
+60. **Captured email goes to a database table** (`arts.email_outbox`) rather than the in-memory stub, because serverless functions don't share memory. RLS is the same as every other table (admins read, anon nothing). The table ships to production but stays empty there.
+61. **Simulated customers are marked by their email domain** (`@sim.invalid`, a reserved TLD that can never deliver) instead of a new column. Reset deletes only those customers and their rows. Phones are fictional `555-01xx` numbers so they can't collide with real customers in booking matching.
+62. **Fast-forward runs one simulated day per request** to stay inside Vercel Hobby's 10s function limit. It runs the daily job at noon and the escalation check at 4:30pm shop time; a real deployment runs the escalation check hourly, so simulated escalations can land a few hours later than they would for real.
+63. **"Send reminders anyway" overrides dry-run for the simulation only**; the Settings value is never changed. Without it, a fast-forward logs dry-run rows and sends nothing, exactly like production during cutover.
+64. **Simulated booking requests skip Turnstile and rate limits** but otherwise use the same database function and emails as the public form.
+65. **Not built yet:** the dummy shop homepage for the staging site, and an `EMAIL_REDIRECT_TO` option for delivering every staging email to one real inbox. Both wait on the account decisions.
+

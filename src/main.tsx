@@ -5,13 +5,22 @@ import './styles.css';
 import { BookingApp } from './public/BookingApp';
 import { ManagePage } from './public/ManagePage';
 import { UnsubscribePage } from './public/UnsubscribePage';
+import { STAGING } from './lib/env';
 
 // Admin code (and the Supabase client) never loads on the public pages.
 const AdminApp = lazy(() => import('./admin/AdminApp'));
 
+if (STAGING) {
+  const robots = document.createElement('meta');
+  robots.name = 'robots';
+  robots.content = 'noindex, nofollow';
+  document.head.append(robots);
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
+      {STAGING && <div className="staging-flag" role="note">TEST SITE: nothing booked here is real, and no email leaves this site.</div>}
       <Routes>
         <Route path="/" element={<BookingApp />} />
         <Route path="/manage" element={<ManagePage />} />

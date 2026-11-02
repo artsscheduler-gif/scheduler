@@ -14,6 +14,8 @@ export const env = {
   get backupKey() { return req('BACKUP_ENCRYPTION_KEY'); },
   get turnstileSecret() { return process.env.TURNSTILE_SECRET_KEY ?? ''; },
   get emailProvider() { return process.env.EMAIL_PROVIDER ?? 'stub'; },
+  // 'staging' turns on the Outbox and Simulator admin actions. Never set it in production.
+  get staging() { return process.env.APP_ENV === 'staging'; },
   get resendKey() { return process.env.RESEND_API_KEY ?? ''; },
   get mailProvider() { return process.env.MAIL_PROVIDER ?? 'stub'; },
   get lobKey() { return process.env.LOB_API_KEY ?? ''; },
