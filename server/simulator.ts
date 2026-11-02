@@ -137,28 +137,36 @@ async function customers(a: Admin, body: unknown): Promise<Result> {
 
 // Booking requests through the same database function and emails as the
 // public form, minus Turnstile and rate limits. Half are returning simulated
-// customers, half brand new.
+// customers, half brand new. An optional slot pins the service and time
+// (the staging smoke test uses it to fill and release capacity).
 async function bookings(a: Admin, body: unknown): Promise<Result> {
-  const b = V.obj(body, ['count']);
+  const b = V.obj(body, ['count', 'slot']);
   const n = V.int(b.count, 'count', 1, 10)!;
+  const fixed = b.slot === undefined ? null : (() => {
+    const x = V.obj(b.slot, ['service_id', 'date', 'kind', 'start_time'], 'slot');
+    return { service_id: V.uuid(x.service_id, 'slot.service_id'), ...V.slot(x) };
+  })();
   const s = await getSettings();
   const { data: svcs } = await db().from('services').select('id, wait_eligible').eq('active', true);
   const { data: existing } = await db().from('customers').select('name, email, phone, vehicles(year, make, model)').like('email', `%@${SIM_DOMAIN}`).is('merged_into', null).limit(500);
   const phones = await freePhones(n);
-  const made: { status: string; date: string }[] = [];
+  const made: { booking_id: string; status: string; date: string }[] = [];
   const failed: string[] = [];
 
   for (let i = 0; i < n; i++) {
     const returning = existing?.length && chance(0.5) ? pick(existing) : null;
     const who = returning ? { name: returning.name, email: returning.email!, phone: returning.phone! } : { ...fakePerson(i), phone: phones[i] };
     const car = returning?.vehicles?.[0] ?? (() => { const [make, model] = pick(CARS); return { year: 2010 + Math.floor(rand() * 15), make, model }; })();
-    const svc = pick(svcs ?? []);
-    const kind = svc.wait_eligible && chance(0.5) ? 'wait' : 'dropoff';
-    const days = await rpc<string[]>('available_days', { p_service_ids: [svc.id], p_kind: kind, p_exclude: [] });
-    if (!days?.length) { failed.push('no open days'); continue; }
-    const date = pick(days.slice(0, 15));
-    let start: string | null = null;
-    if (kind === 'wait') {
+    const svc = fixed ? { id: fixed.service_id, wait_eligible: fixed.kind === 'wait' } : pick(svcs ?? []);
+    const kind = fixed ? fixed.kind : svc.wait_eligible && chance(0.5) ? 'wait' : 'dropoff';
+    let date = fixed?.date ?? '';
+    let start: string | null = fixed?.start_time ?? null;
+    if (!fixed) {
+      const days = await rpc<string[]>('available_days', { p_service_ids: [svc.id], p_kind: kind, p_exclude: [] });
+      if (!days?.length) { failed.push('no open days'); continue; }
+      date = pick(days.slice(0, 15));
+    }
+    if (!fixed && kind === 'wait') {
       const times = await rpc<string[]>('available_times', { p_service_ids: [svc.id], p_date: date, p_exclude: [] });
       if (!times?.length) { failed.push(`no times on ${date}`); continue; }
       start = pick(times).slice(0, 5);
@@ -172,7 +180,7 @@ async function bookings(a: Admin, body: unknown): Promise<Result> {
     });
     if (!r.ok) { failed.push((r.violations ?? []).join(', ') || 'refused'); continue; }
     await notifyCreated(s, r.booking_id!);
-    made.push({ status: r.status!, date });
+    made.push({ booking_id: r.booking_id!, status: r.status!, date });
   }
   await audit(a, 'sim.bookings', { made: made.length, failed: failed.length });
   return { status: 200, body: { made, failed } };

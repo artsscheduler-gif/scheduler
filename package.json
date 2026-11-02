@@ -21,7 +21,8 @@
     "prelaunch": "tsx scripts/prelaunch-check.ts",
     "dev:api": "tsx watch scripts/dev-api.ts",
     "staging:api": "APP_ENV=staging EMAIL_PROVIDER=capture tsx watch scripts/dev-api.ts",
-    "staging:web": "VITE_APP_ENV=staging vite"
+    "staging:web": "VITE_APP_ENV=staging vite",
+    "smoke:staging": "tsx scripts/smoke-staging.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

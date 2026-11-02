@@ -31,6 +31,10 @@ describe('staging gate', () => {
     }
   });
 
+  it('rejects requests with no session', async () => {
+    await expect(adminAction({ headers: {}, method: 'POST' } as any, 'sim-status', {})).rejects.toMatchObject({ status: 401 });
+  });
+
   it('still requires an MFA-verified admin', async () => {
     const nomfa = (await adminToken('owner', false)).token;
     await expect(adminAction(reqWith(nomfa), 'sim-status', {})).rejects.toMatchObject({ status: 403 });
@@ -113,6 +117,16 @@ describe('simulator', () => {
     expect(b).toBe(made.length);
     const [{ staff }] = await sql`select count(*)::int staff from arts.email_outbox where to_email = 'chris@example.com'`;
     expect(staff).toBeGreaterThan(0);
+  });
+
+  it('books a pinned slot and returns the booking ids', async () => {
+    const oil = await serviceId('Oil change');
+    const day = await weekdayAhead(4);
+    const r = await act('sim-bookings', { count: 2, slot: { service_id: oil, date: day, kind: 'wait', start_time: '09:00' } });
+    const made = (r.body as any).made;
+    expect(made).toHaveLength(2);
+    const rows = await sql`select id, date::text, start_time::text, status from arts.bookings where id in ${sql(made.map((m: any) => m.booking_id))}`;
+    expect(rows.every((b) => b.date === day && b.start_time.startsWith('09:00') && b.status === 'requested')).toBe(true);
   });
 
   it('reset removes only simulated customers', async () => {
