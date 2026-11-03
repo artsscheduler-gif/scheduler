@@ -132,6 +132,27 @@ describe.skipIf(!up)('Phase 3: public booking on a 375px phone', () => {
     expect(b).toEqual({ customer_id: c.id, vehicle_id: v.id });
   });
 
+  it('My account: a returning customer sees and edits their cars', async () => {
+    const [c] = await sql`insert into arts.customers (name, email, phone, source) values ('Ari Account', 'ari@example.com', '+16105550155', 'import') returning id`;
+    await sql`insert into arts.vehicles (customer_id, year, make, model, notes) values (${c.id}, 2012, 'Volvo', 'XC60', 'PA-ARI1')`;
+    const page = await phone();
+    await page.goto(`${BASE}/account?k=${bookToken(c.id, 1)}`);
+    await page.getByRole('heading', { name: 'Hi Ari' }).waitFor();
+    await page.getByText('2012 Volvo XC60').waitFor();
+    await shot(page, '8-account');
+    await noHorizontalScroll(page);
+    await page.getByRole('button', { name: 'Add a car' }).click();
+    await page.getByLabel('Make').fill('Mazda');
+    await page.getByLabel('Model').fill('CX-5');
+    await page.getByRole('button', { name: 'Add car' }).click();
+    await page.getByText('Mazda CX-5').waitFor();
+    expect((await sql`select count(*)::int n from arts.vehicles where customer_id = ${c.id}`)[0].n).toBe(2);
+    // The header link brings them back; their key is remembered for the visit.
+    await page.goto(`${BASE}/`);
+    await page.getByRole('link', { name: 'My account' }).click();
+    await page.getByRole('heading', { name: 'Hi Ari' }).waitFor();
+  });
+
   it('shows the phone fallback on a server error', async () => {
     const page = await phone();
     await page.route('**/api/availability?services=*', (r) => r.fulfill({ status: 503, body: '{"error":"unavailable"}' }));

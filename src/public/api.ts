@@ -41,6 +41,13 @@ export interface OpenTime { time: string; wait: boolean; dropoff: boolean; wait_
 // A returning customer, unlocked by their booking key.
 export interface Profile { name: string; email: string | null; phone: string | null; vehicles: { id: string; label: string }[] }
 
+export interface Account {
+  details: { name: string; email: string | null; phone: string | null; address_line1: string | null; address_line2: string | null; city: string | null; state: string | null; postal_code: string | null; email_opt_out: boolean; mail_opt_out: boolean };
+  cars: { id: string; year: number | null; make: string | null; model: string | null; notes: string; vin: string | null }[];
+  history: { date: string; service: string; car: string; mileage: number | null }[];
+  upcoming: { when: string; status: string; services: string; manage: string }[];
+}
+
 export const api = {
   config: () => call<PublicConfig>('/api/availability?config=1'),
   days: (services: string[], t?: string) =>
@@ -56,6 +63,8 @@ export const api = {
   sendCode: (email: string) => call<{ ok: true }>('/api/me', { method: 'POST', body: JSON.stringify({ action: 'code', email }) }),
   verifyCode: (email: string, code: string, remember: boolean) =>
     call<{ key: string; profile: Profile }>('/api/me', { method: 'POST', body: JSON.stringify({ action: 'verify', email, code, remember }) }),
+  account: (k: string) => call<Account>(`/api/me?${new URLSearchParams({ k, account: '1' })}`),
+  updateAccount: (body: Record<string, unknown>) => call<{ ok: true; id?: string }>('/api/me', { method: 'POST', body: JSON.stringify(body) }),
   unsubscribe: (t: string, channel: 'email' | 'mail') => call<any>('/api/unsubscribe', { method: 'POST', body: JSON.stringify({ t, channel }) }),
 };
 

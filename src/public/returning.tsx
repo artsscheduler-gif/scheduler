@@ -50,8 +50,8 @@ export function useReturningCustomer() {
 }
 
 // "Been here before?" box: email → code → in.
-export function FindMyCars({ onIn }: { onIn: (key: string, profile: Profile, remember: boolean) => void }) {
-  const [open, setOpen] = useState(false);
+export function FindMyCars({ onIn, open: startOpen = false, title }: { onIn: (key: string, profile: Profile, remember: boolean) => void; open?: boolean; title?: string }) {
+  const [open, setOpen] = useState(startOpen);
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [code, setCode] = useState('');
@@ -96,6 +96,7 @@ export function FindMyCars({ onIn }: { onIn: (key: string, profile: Profile, rem
   }
   return (
     <div className="find-cars open">
+      {title && <strong>{title}</strong>}
       {!sent ? (
         <>
           <label className="field">
@@ -105,7 +106,7 @@ export function FindMyCars({ onIn }: { onIn: (key: string, profile: Profile, rem
           <p className="muted small">If it’s on file, we’ll email you a 6-digit code.</p>
           <div className="row">
             <button type="button" className="btn" disabled={busy || !email.includes('@')} onClick={send}>{busy ? 'Sending…' : 'Email me a code'}</button>
-            <button type="button" className="linklike small" onClick={() => setOpen(false)}>Cancel</button>
+            {!startOpen && <button type="button" className="linklike small" onClick={() => setOpen(false)}>Cancel</button>}
           </div>
         </>
       ) : (

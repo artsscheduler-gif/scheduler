@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from 'react-router';
 import './styles.css';
 import { BookingApp } from './public/BookingApp';
 import { ManagePage } from './public/ManagePage';
+import { AccountPage } from './public/AccountPage';
 import { UnsubscribePage } from './public/UnsubscribePage';
 import { STAGING } from './lib/env';
 
@@ -24,6 +25,7 @@ createRoot(document.getElementById('root')!).render(
       <Routes>
         <Route path="/" element={<BookingApp />} />
         <Route path="/manage" element={<ManagePage />} />
+        <Route path="/account" element={<AccountPage />} />
         <Route path="/unsubscribe" element={<UnsubscribePage />} />
         <Route
           path="/admin/*"

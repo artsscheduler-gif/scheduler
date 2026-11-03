@@ -8,6 +8,7 @@ import * as V from './validate.js';
 import { bookToken, verifyToken, type BookToken } from './tokens.js';
 import { sendEmail } from './email/send.js';
 import * as T from './email/templates.js';
+import { manageLink } from './bookings.js';
 
 const CODE_MINUTES = 10;
 const CODE_TRIES = 5;
@@ -85,4 +86,110 @@ export async function postMeVerify(body: unknown, ip: string): Promise<Result> {
   const key = bookToken(c.id, b.remember === true ? 365 : 1);
   const me = await customerFromKey(key);
   return { status: 200, body: { key, profile: me!.profile } };
+}
+
+// ---- My account ---------------------------------------------------------------
+// Everything a returning customer can see and change about themselves.
+
+const customerActor = (id: string, name: string) => ({ type: 'customer', id, label: name });
+
+async function requireMe(k: unknown) {
+  const me = await customerFromKey(k);
+  if (!me) throw new HttpError(401, { error: 'invalid_link' });
+  return me;
+}
+
+export async function getAccount(k: unknown): Promise<Result> {
+  const me = await requireMe(k);
+  const s = await getSettings();
+  const [{ data: c }, { data: cars }, { data: history }, { data: upcoming }] = await Promise.all([
+    db().from('customers').select('name, email, phone, address_line1, address_line2, city, state, postal_code, email_opt_out, mail_opt_out').eq('id', me.id).single(),
+    db().from('vehicles').select('id, year, make, model, notes, vin').eq('customer_id', me.id).order('created_at'),
+    db().from('service_history').select('service_date, raw_service, mileage, services(name), vehicles(year, make, model)').eq('customer_id', me.id).order('service_date', { ascending: false }).limit(100),
+    db().from('bookings').select('id, root_id, date, kind, start_time, status, booking_services(services(name))').eq('customer_id', me.id)
+      .in('status', ['requested', 'confirmed']).gte('date', new Date().toISOString().slice(0, 10)).order('date'),
+  ]);
+  const car = (v: any) => (v ? [v.year, v.make, v.model].filter(Boolean).join(' ') : '');
+  return {
+    status: 200,
+    body: {
+      details: c,
+      cars: cars ?? [],
+      history: (history ?? []).map((h: any) => ({ date: h.service_date, service: h.services?.name ?? h.raw_service ?? 'Service', car: car(h.vehicles), mileage: h.mileage })),
+      upcoming: (upcoming ?? []).map((b: any) => ({
+        when: T.whenText(s, b), status: b.status, services: (b.booking_services ?? []).map((x: any) => x.services?.name).join(', '),
+        manage: manageLink(s, b),
+      })),
+    },
+  };
+}
+
+export async function postAccount(body: unknown): Promise<Result> {
+  const b = V.obj(body, ['k', 'action', 'details', 'car', 'car_id', 'email_opt_out', 'mail_opt_out']);
+  const me = await requireMe(b.k);
+  const actor = customerActor(me.id, me.profile.name);
+  const audit = (action: string, entity: string, id: string, before: unknown, after: unknown) =>
+    rpc('audit', { p_actor: actor, p_action: action, p_entity: entity, p_entity_id: id, p_before: before, p_after: after });
+
+  if (b.action === 'details') {
+    const d = V.obj(b.details, ['name', 'email', 'phone', 'address_line1', 'address_line2', 'city', 'state', 'postal_code'], 'details');
+    const opt = (v: unknown, f: string, max: number) => V.str(v, f, { max, optional: true }) || null;
+    const row = {
+      name: V.str(d.name, 'name', { max: 100 }),
+      email: V.email(d.email),
+      phone: V.phone(d.phone),
+      address_line1: opt(d.address_line1, 'address_line1', 100),
+      address_line2: opt(d.address_line2, 'address_line2', 100),
+      city: opt(d.city, 'city', 60),
+      state: d.state ? V.str(d.state, 'state', { max: 2 }).toUpperCase() : null,
+      postal_code: d.postal_code ? (/^\d{5}(-\d{4})?$/.test(String(d.postal_code).trim()) ? String(d.postal_code).trim() : (() => { throw new V.ValidationError('postal_code', 'must be a 5-digit ZIP'); })()) : null,
+    };
+    const { data: before } = await db().from('customers').select('name, email, phone, address_line1, address_line2, city, state, postal_code').eq('id', me.id).single();
+    // A new address may be deliverable even if the old one wasn't.
+    const addressChanged = before && (before.address_line1 !== row.address_line1 || before.postal_code !== row.postal_code);
+    await db().from('customers').update({ ...row, ...(addressChanged ? { address_undeliverable: false } : {}) }).eq('id', me.id);
+    await audit('customer.self_update', 'customer', me.id, before, row);
+    return { status: 200, body: { ok: true } };
+  }
+
+  if (b.action === 'prefs') {
+    const row = { email_opt_out: V.bool(b.email_opt_out, 'email_opt_out'), mail_opt_out: V.bool(b.mail_opt_out, 'mail_opt_out') };
+    const { data: before } = await db().from('customers').select('email_opt_out, mail_opt_out').eq('id', me.id).single();
+    await db().from('customers').update(row).eq('id', me.id);
+    await audit('customer.self_prefs', 'customer', me.id, before, row);
+    return { status: 200, body: { ok: true } };
+  }
+
+  if (b.action === 'car') {
+    const v = V.obj(b.car, ['year', 'make', 'model', 'notes', 'vin'], 'car');
+    const vin = String(v.vin ?? '').trim().toUpperCase().replace(/[\s-]/g, '');
+    if (vin && !/^[A-HJ-NPR-Z0-9]{11,17}$/.test(vin)) throw new V.ValidationError('vin', 'must be 11–17 letters and numbers (no I, O or Q)');
+    const row = {
+      year: V.int(v.year, 'year', 1950, new Date().getFullYear() + 2, true),
+      make: V.str(v.make, 'make', { max: 40 }),
+      model: V.str(v.model, 'model', { max: 60 }),
+      notes: V.str(v.notes, 'notes', { max: 200, optional: true }),
+      vin: vin || null,
+    };
+    if (b.car_id) {
+      const id = V.uuid(b.car_id, 'car_id');
+      if (!me.profile.vehicles.some((x) => x.id === id)) throw new HttpError(404, { error: 'not_found' });
+      const { data: before } = await db().from('vehicles').select('*').eq('id', id).single();
+      await db().from('vehicles').update(row).eq('id', id);
+      await audit('vehicle.self_update', 'vehicle', id, before, row);
+      return { status: 200, body: { ok: true } };
+    }
+    const { data } = await db().from('vehicles').insert({ ...row, customer_id: me.id }).select('id').single();
+    await audit('vehicle.self_create', 'vehicle', data!.id, null, row);
+    return { status: 200, body: { ok: true, id: data!.id } };
+  }
+
+  if (b.action === 'remove-car') {
+    const id = V.uuid(b.car_id, 'car_id');
+    if (!me.profile.vehicles.some((x) => x.id === id)) throw new HttpError(404, { error: 'not_found' });
+    await rpc('delete_vehicle', { p_vehicle: id, p_actor: actor });
+    return { status: 200, body: { ok: true } };
+  }
+
+  throw new V.ValidationError('action', 'unknown');
 }

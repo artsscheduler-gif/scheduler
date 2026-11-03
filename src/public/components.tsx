@@ -57,6 +57,7 @@ export function Shell({ config, step, children }: { config: PublicConfig | null;
           ) : (
             <span className="pub-name">{config?.shop_name ?? ''}</span>
           )}
+          <a className="pub-account" href="/account">My account</a>
           {phone && (
             <a className="pub-phone" href={telHref(phone)}>
               <span aria-hidden="true">☎</span> {phone}
