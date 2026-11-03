@@ -14,8 +14,9 @@ export async function adminPost<T = any>(action: string, body: unknown): Promise
     body: JSON.stringify(body),
   });
   const json = await res.json().catch(() => ({}));
-  // The server ends sessions older than the timeout setting: sign out here too.
-  if (res.status === 401 && json?.error === 'session_expired') {
+  // The sign-in has ended (timed out, or ended elsewhere, e.g. a password
+  // change): go back to the sign-in screen rather than show an error.
+  if (res.status === 401 && (json?.error === 'session_expired' || json?.error === 'unauthenticated')) {
     await supabase.auth.signOut();
     window.location.assign('/admin');
   }

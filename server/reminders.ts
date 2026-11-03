@@ -411,7 +411,9 @@ export async function testPostcard(a: Admin): Promise<Result> {
   const s = await getSettings();
   const shop = shopAddress(s);
   const card = await renderPostcard(s, { name: 'Pat Sample', service: 'Oil change', vehicle: '2017 Honda Accord', due_date: today(s) }, undefined, { qrLink: true });
-  const r = await mailProvider().sendPostcard({ to: shop, from: shop, front: card.front, back: card.back, size: s.postcard_size, idempotencyKey: `test-postcard:${Date.now()}` });
+  // Show the printer's own message if it refuses (bad key, bad address…).
+  const r = await mailProvider().sendPostcard({ to: shop, from: shop, front: card.front, back: card.back, size: s.postcard_size, idempotencyKey: `test-postcard:${Date.now()}` })
+    .catch((e: Error) => { throw new HttpError(502, { error: e.message.slice(0, 300) }); });
   const mode = postcardMode();
   await rpc('audit', { p_actor: { type: 'admin', id: a.id, label: a.label }, p_action: 'postcard.test', p_entity: 'postcard', p_entity_id: r.id, p_before: null, p_after: { mode } });
   return { status: 200, body: { id: r.id, preview_url: r.previewUrl ?? null, mode, printer: mailProvider().name } };

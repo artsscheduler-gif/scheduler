@@ -111,7 +111,7 @@ function PrinterCheck() {
           {result.mode === 'stub' ? 'Test card made (not connected to a printer, so nothing was sent).' : <>{printer} accepted the card ({result.id}). <ProofLink id={result.id} url={result.preview_url} /></>}
         </p>
       )}
-      {err && <p className="error small" role="alert">{printer || 'The printer'} said: {err}</p>}
+      {err && <p className="error small" role="alert">Couldn’t send: {err}</p>}
     </div>
   );
 }
