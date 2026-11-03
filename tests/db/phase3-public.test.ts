@@ -255,6 +255,42 @@ describe('Manage link', () => {
   });
 });
 
+describe('Manage-link abuse and cutoffs', () => {
+  it('a new time inside the cutoff is refused', async () => {
+    // Booking ~25 days out; changes close 20 days (480h) ahead. Moving to ~3 days out is too soon.
+    const far = await weekdayAhead(25);
+    const b = body({ date: far });
+    await postBook(b, '10.1.1.1');
+    const t = await tokenFor(b.email);
+    await sql`update arts.shop_settings set change_cutoff_hours = 480`;
+    const r = await postReschedule({ t, date: day, kind: 'wait', start_time: '09:00' });
+    expect(r).toMatchObject({ status: 409, body: { error: 'too_soon' } });
+    expect((await postReschedule({ t, date: far, kind: 'wait', start_time: '14:00' })).status).toBe(200);
+  });
+
+  it('caps change requests per appointment per day', async () => {
+    const b = body();
+    await postBook(b, '10.1.1.2');
+    const t = await tokenFor(b.email);
+    for (let i = 0; i < 5; i++) await postReschedule({ t, date: day, kind: 'wait', start_time: i % 2 ? '14:00' : '13:00' });
+    await expect(postReschedule({ t, date: day, kind: 'wait', start_time: '14:30' })).rejects.toMatchObject({ status: 429 });
+  });
+
+  it('a failed spam check does not use up the customer\'s daily limit', async () => {
+    const s = await sql`select rate_limit_contact_per_day as n from arts.shop_settings`;
+    const b = body();
+    const prev = process.env.TURNSTILE_SECRET_KEY;
+    process.env.TURNSTILE_SECRET_KEY = '2x0000000000000000000000000000000AA'; // Cloudflare's always-fail test secret
+    try {
+      for (let i = 0; i < s[0].n + 1; i++) await postBook(b, `10.1.2.${i}`).catch(() => {});
+    } finally {
+      process.env.TURNSTILE_SECRET_KEY = prev;
+    }
+    const [{ count }] = await sql`select count(*)::int from arts.rate_limits where key like ${'book:email:%'}`;
+    expect(count).toBe(0);
+  });
+});
+
 describe('Unsubscribe', () => {
   it('opts the customer out with a signed link and logs it', async () => {
     const [c] = await sql`insert into arts.customers (name, email) values ('U', 'u@example.com') returning id`;

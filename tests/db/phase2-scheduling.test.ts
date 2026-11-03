@@ -220,6 +220,15 @@ describe('Time blocks', () => {
     expect(await check(addDaysIso(day, 1), 'wait', '09:00', ['Oil change'])).not.toContain('blocked');
   });
 
+  it('overlapping blocks count once against capacity', async () => {
+    // A weekly block and a one-off copy of it, 07:30-13:00 (330 of 600 minutes).
+    // Counted once, 270 minutes per lane remain; counted twice, nothing would.
+    const dow = new Date(`${day}T12:00:00Z`).getUTCDay() || 7;
+    await sql`insert into arts.time_blocks (weekday, start_time, end_time) values (${dow}, '07:30', '13:00')`;
+    await sql`insert into arts.time_blocks (date, start_time, end_time) values (${day}, '07:30', '13:00')`;
+    expect(await check(day, 'dropoff', null, ['Brakes'])).not.toContain('day_capacity');
+  });
+
   it('a block that covers the whole day leaves no capacity', async () => {
     await sql`insert into arts.time_blocks (date, start_time, end_time) values (${day}, '07:30', '17:30')`;
     expect(await check(day, 'dropoff', null, ['Brakes'])).toContain('day_capacity');

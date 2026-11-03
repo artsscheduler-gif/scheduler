@@ -200,6 +200,18 @@ export function blockLabel(b: Block) {
 }
 
 // Block part of a day from online booking, once or every week.
+// Total minutes covered by possibly overlapping [start, end) spans.
+function mergedMinutes(spans: number[][]) {
+  let total = 0;
+  let end = -1;
+  for (const [s, e] of spans.filter(([s, e]) => e > s).sort((a, b) => a[0] - b[0])) {
+    if (e <= end) continue;
+    total += e - Math.max(s, end);
+    end = e;
+  }
+  return total;
+}
+
 export function BlockForm({ date, onDone }: { date: string; onDone: () => void }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -296,7 +308,7 @@ export function DayView() {
       return { b, lane, st };
     });
     // Same as the server: blocked minutes come off the day's capacity.
-    const blocked = hrs ? (blocks.data ?? []).reduce((n, bl) => n + Math.max(0, Math.min(minutesOf(bl.end_time), hrs.close) - Math.max(minutesOf(bl.start_time), hrs.open)), 0) : 0;
+    const blocked = hrs ? mergedMinutes((blocks.data ?? []).map((bl) => [Math.max(minutesOf(bl.start_time), hrs.open), Math.min(minutesOf(bl.end_time), hrs.close)])) : 0;
     const cap = hrs ? s.total_lanes * Math.max(0, hrs.close - hrs.open - blocked) : 0;
     const used = holding.reduce((n, b) => n + b.total_minutes, 0);
     const dropUsed = holding.filter((b) => b.kind === 'dropoff').reduce((n, b) => n + b.total_minutes, 0);

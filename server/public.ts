@@ -54,9 +54,11 @@ export async function postBook(body: unknown, ip: string): Promise<Result> {
   const s = await getSettings();
   const input = V.publicBooking(body, s.notes_max_length);
   await limit(`book:ip:${ip}`, s.rate_limit_ip_per_hour, 3600);
+  // Turnstile before the per-contact limits, so nobody can burn a customer's
+  // daily allowance (and lock them out) without passing the check.
+  if (!(await verifyTurnstile(input.turnstile, ip))) throw new HttpError(400, { error: 'verification_failed' });
   await limit(`book:email:${input.email}`, s.rate_limit_contact_per_day, 86400);
   await limit(`book:phone:${input.phone}`, s.rate_limit_contact_per_day, 86400);
-  if (!(await verifyTurnstile(input.turnstile, ip))) throw new HttpError(400, { error: 'verification_failed' });
 
   const r = await rpc<{ ok: boolean; booking_id?: string; status?: string; violations?: string[] }>('create_booking', {
     p: {
@@ -183,6 +185,8 @@ export async function postCancel(body: unknown): Promise<Result> {
   return { status: 200, body: { ok: true, state: 'cancelled' } };
 }
 
+const CHANGES_PER_DAY = 5;
+
 async function submitChange(
   token: unknown,
   change: 'reschedule' | 'services',
@@ -192,10 +196,14 @@ async function submitChange(
   const r = await resolve(token);
   if (!r.live) throw new HttpError(409, { error: 'inactive' });
   if (!withinCutoff(s, r.live)) throw new HttpError(403, { error: 'too_late', shop_phone: s.shop_phone });
+  // Each change emails the shop, so one manage link can't be used to flood it.
+  await limit(`change:${r.rootId}`, CHANGES_PER_DAY, 86400);
   // Changes build on the latest version (a pending request replaces the previous one).
   const latest = r.pending ?? r.confirmed!;
   const l = (await loadBooking(latest.id))!;
   const n = next(latest, l.services.map((x) => x.id));
+  // The new time must also be one the customer could still change online.
+  if (!withinCutoff(s, { ...latest, ...n.slot })) return { status: 409, body: { error: 'too_soon', cutoff_hours: s.change_cutoff_hours } };
   const res = await rpc<{ ok: boolean; booking_id?: string; violations?: string[] }>('create_booking', {
     p: {
       root_id: r.rootId,

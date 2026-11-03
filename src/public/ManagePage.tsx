@@ -48,16 +48,32 @@ export function ManagePage() {
   const [slot, setSlot] = useState<Picked | null>(null);
   const [serviceIds, setServiceIds] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
+  const [notice, setNotice] = useState('');
+
+  // Services and notes as booked, so an abandoned edit never leaks into another change.
+  function resetEdits(v: ManageView | null = view) {
+    const latest = v?.pending ?? v?.current;
+    if (!latest) return;
+    setServiceIds(latest.services.map((s) => s.id));
+    setNotes(latest.customer_notes);
+  }
 
   function load() {
     api.manage(t).then((v: ManageView) => {
       setView(v);
-      const latest = v.pending ?? v.current;
-      if (latest) {
-        setServiceIds(latest.services.map((s) => s.id));
-        setNotes(latest.customer_notes);
-      }
-    }).catch((e) => setMode(e instanceof ApiError && e.status === 401 ? 'invalid' : 'outage'));
+      resetEdits(v);
+    }).catch(failed);
+  }
+
+  function failed(e?: unknown) {
+    setMode(e instanceof ApiError && e.status === 401 ? 'invalid' : 'outage');
+  }
+
+  function go(m: Mode) {
+    setNotice('');
+    setSlot(null);
+    if (m === 'view' || m === 'reschedule' || m === 'services') resetEdits();
+    setMode(m);
   }
 
   useEffect(load, []);
@@ -82,7 +98,15 @@ export function ManagePage() {
     } catch (e) {
       if (e instanceof ApiError && e.code === 'needs_new_slot') {
         setSlot(null);
-        setMode('services-slot');
+        // A reschedule lost its time; a services change no longer fits the current one.
+        if (mode === 'reschedule') setNotice('Sorry, that time was just taken. Please pick another.');
+        else { setNotice(''); setMode('services-slot'); }
+      } else if (e instanceof ApiError && e.code === 'too_soon') {
+        setSlot(null);
+        setNotice(`That time is too soon to change online (changes close ${view?.cutoff_hours ?? ''} hours before). Pick a later time, or call us.`);
+        if (mode === 'services') setMode('services-slot');
+      } else if (e instanceof ApiError && e.status === 429) {
+        setNotice('You’ve made several changes today. Please call us to make another.');
       } else if (e instanceof ApiError && e.code === 'too_late') {
         load();
         setMode('view');
@@ -145,9 +169,9 @@ export function ManagePage() {
             </div>
           ) : (
             <div className="stack">
-              <button className="btn big" onClick={() => { setSlot(null); setMode('reschedule'); }}>Change date or time</button>
-              <button className="btn big" onClick={() => setMode('services')}>Change services or notes</button>
-              <button className="btn big danger" onClick={() => setMode('cancel')}>Cancel appointment</button>
+              <button className="btn big" onClick={() => go('reschedule')}>Change date or time</button>
+              <button className="btn big" onClick={() => go('services')}>Change services or notes</button>
+              <button className="btn big danger" onClick={() => go('cancel')}>Cancel appointment</button>
             </div>
           )}
         </section>
@@ -158,7 +182,7 @@ export function ManagePage() {
           <h1>Cancel this appointment?</h1>
           {(view.current ?? view.pending) && <VersionCard v={(view.current ?? view.pending)!} label="Appointment" />}
           <div className="actions">
-            <button className="btn big" onClick={() => setMode('view')}>Keep it</button>
+            <button className="btn big" onClick={() => go('view')}>Keep it</button>
             <button className="btn big danger" disabled={busy} onClick={() => run(() => api.cancel(t), 'cancelled')}>Yes, cancel</button>
           </div>
         </section>
@@ -168,10 +192,11 @@ export function ManagePage() {
         <section>
           <h1>Pick a new time</h1>
           <p className="lede">The shop confirms changes. Your current time stays held until they do.</p>
-          <SlotPicker serviceIds={serviceIds} token={t} value={slot} onChange={pick} onOutage={() => setMode('outage')} />
+          {notice && <p className="notice" role="alert">{notice}</p>}
+          <SlotPicker serviceIds={serviceIds} token={t} value={slot} onChange={pick} onOutage={failed} />
           {slot && <KindPicker picked={slot.time} waitAllowed={waitAllowed} value={kind} dropoffWindow={dropoffWindow} onChange={setKind} />}
           <div className="actions sticky">
-            <button className="btn big" onClick={() => setMode('view')}>Back</button>
+            <button className="btn big" onClick={() => go('view')}>Back</button>
             <button className="btn primary big" disabled={!picked || busy} onClick={() => run(() => api.reschedule({ t, ...picked }), 'sent')}>Request change</button>
           </div>
         </section>
@@ -186,7 +211,7 @@ export function ManagePage() {
             <textarea value={notes} rows={3} maxLength={view.notes_max_length} onChange={(e) => setNotes(e.target.value)} />
           </label>
           <div className="actions">
-            <button className="btn big" onClick={() => setMode('view')}>Back</button>
+            <button className="btn big" onClick={() => go('view')}>Back</button>
             <button
               className="btn primary big"
               disabled={serviceIds.length === 0 || busy}
@@ -201,8 +226,8 @@ export function ManagePage() {
       {mode === 'services-slot' && config && (
         <section>
           <h1>Pick a new time</h1>
-          <p className="notice">Those services don’t fit your current time. Pick a new one.</p>
-          <SlotPicker serviceIds={serviceIds} token={t} value={slot} onChange={pick} onOutage={() => setMode('outage')} />
+          <p className="notice" role="alert">{notice || 'Those services don’t fit your current time. Pick a new one.'}</p>
+          <SlotPicker serviceIds={serviceIds} token={t} value={slot} onChange={pick} onOutage={failed} />
           {slot && <KindPicker picked={slot.time} waitAllowed={waitAllowed} value={kind} dropoffWindow={dropoffWindow} onChange={setKind} />}
           <div className="actions sticky">
             <button className="btn big" onClick={() => setMode('services')}>Back</button>

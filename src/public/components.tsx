@@ -176,7 +176,7 @@ export interface Picked { date: string; time: OpenTime }
 export function SlotPicker({
   serviceIds, token, value, onChange, onOutage,
 }: {
-  serviceIds: string[]; token?: string; value: Picked | null; onChange: (p: Picked | null) => void; onOutage: () => void;
+  serviceIds: string[]; token?: string; value: Picked | null; onChange: (p: Picked | null) => void; onOutage: (e?: unknown) => void;
 }) {
   const [days, setDays] = useState<string[] | null>(null);
   const [date, setDate] = useState<string | null>(value?.date ?? null);

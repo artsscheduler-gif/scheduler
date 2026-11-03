@@ -19,6 +19,8 @@ export function BookingApp() {
   const [kind, setKind] = useState<'wait' | 'dropoff' | null>(null);
   const [slot, setSlot] = useState<Picked | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  // Bumped after a failed submit: a Turnstile token is single-use, so get a fresh one.
+  const [tsKey, setTsKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [result, setResult] = useState<Awaited<ReturnType<typeof api.book>> | null>(null);
@@ -90,6 +92,8 @@ export function BookingApp() {
       } else {
         setStep('outage');
       }
+      setToken(null);
+      setTsKey((k) => k + 1);
     } finally {
       setSubmitting(false);
     }
@@ -198,7 +202,7 @@ export function BookingApp() {
               <span>Car notes <span className="muted">(optional — color, plate)</span></span>
               <input name="vnotes" maxLength={200} />
             </label>
-            <Turnstile onToken={setToken} />
+            <Turnstile key={tsKey} onToken={setToken} />
             {fieldError === 'turnstile' && <p className="field-err">Please complete the check above and try again.</p>}
             {fieldError && fieldError !== 'turnstile' && <p className="field-err" role="alert">Please fix the highlighted field.</p>}
             <div className="actions">
