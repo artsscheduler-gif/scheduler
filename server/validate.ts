@@ -98,14 +98,17 @@ export interface PublicBookingInput extends SlotInput {
   name: string;
   email: string;
   phone: string;
-  vehicle: { year: number | null; make: string; model: string; notes: string };
+  vehicle: { year: number | null; make: string; model: string; notes: string } | null;
   turnstile: string;
   source: string | null;
+  key: string | null; // returning customer's booking key
+  vehicle_id: string | null; // one of their cars on file (needs the key)
 }
 
 export function publicBooking(body: unknown, notesMax: number): PublicBookingInput {
-  const b = obj(body, ['service_ids', 'customer_notes', 'date', 'kind', 'start_time', 'name', 'email', 'phone', 'vehicle', 'turnstile', 'source']);
-  const v = obj(b.vehicle, ['year', 'make', 'model', 'notes'], 'vehicle');
+  const b = obj(body, ['service_ids', 'customer_notes', 'date', 'kind', 'start_time', 'name', 'email', 'phone', 'vehicle', 'turnstile', 'source', 'k', 'vehicle_id']);
+  const vehicleId = b.vehicle_id ? uuid(b.vehicle_id, 'vehicle_id') : null;
+  const v = vehicleId && !b.vehicle ? null : obj(b.vehicle, ['year', 'make', 'model', 'notes'], 'vehicle');
   return {
     ...slot(b, true),
     service_ids: uuids(b.service_ids, 'service_ids'),
@@ -113,7 +116,7 @@ export function publicBooking(body: unknown, notesMax: number): PublicBookingInp
     name: str(b.name, 'name', { max: 100 }),
     email: email(b.email),
     phone: phone(b.phone),
-    vehicle: {
+    vehicle: v && {
       year: int(v.year, 'vehicle.year', 1950, new Date().getFullYear() + 2, true),
       make: str(v.make, 'vehicle.make', { max: 40 }),
       model: str(v.model, 'vehicle.model', { max: 60 }),
@@ -121,5 +124,7 @@ export function publicBooking(body: unknown, notesMax: number): PublicBookingInp
     },
     turnstile: str(b.turnstile, 'turnstile', { max: 2048 }),
     source: typeof b.source === 'string' && /^[a-z0-9_-]{1,40}$/.test(b.source) ? b.source : null,
+    key: typeof b.k === 'string' && b.k ? b.k : null,
+    vehicle_id: vehicleId,
   };
 }

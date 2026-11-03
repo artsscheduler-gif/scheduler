@@ -1,12 +1,14 @@
 import QRCode from 'qrcode';
 import type { ShopSettings } from './db.js';
 import { esc } from './email/templates.js';
+import { personalBookingUrl } from './tokens.js';
 
 export interface PostcardVars {
   name: string;
   service: string;
   vehicle: string;
   due_date: string;
+  customerId?: string; // makes the QR code a personal booking link
 }
 
 // Default templates, used while the settings fields are empty. Placeholder
@@ -56,7 +58,9 @@ export function trackedBookingUrl(s: ShopSettings): string {
 }
 
 export async function renderPostcard(s: ShopSettings, v: PostcardVars, overrides?: { front?: string; back?: string }) {
-  const url = trackedBookingUrl(s);
+  // A real card's QR code is personal: scanning it opens booking with the
+  // customer's details and cars filled in (a year, since postcards linger).
+  const url = v.customerId ? personalBookingUrl(s.booking_url, v.customerId, 'postcard', 365) : trackedBookingUrl(s);
   const qr = await QRCode.toDataURL(url, { margin: 0, width: 300, errorCorrectionLevel: 'M' });
   const dims = DIMS[s.postcard_size];
   const vars: Record<string, string> = {

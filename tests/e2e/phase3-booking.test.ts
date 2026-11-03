@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { Browser, Page } from 'playwright';
 import { BASE, SHOTS, launch, serverUp } from './helpers';
 import { sql, resetData } from '../db/helpers';
-import { signToken } from '../../server/tokens';
+import { bookToken, signToken } from '../../server/tokens';
 
 const up = await serverUp();
 let browser: Browser;
@@ -106,6 +106,30 @@ describe.skipIf(!up)('Phase 3: public booking on a 375px phone', () => {
     await page.getByRole('radio', { name: /^Wait/ }).focus();
     await page.keyboard.press('ArrowDown');
     expect(await page.getByRole('radio', { name: /^Drop off/ }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('a returning customer’s personal link fills in their details and cars', async () => {
+    const [c] = await sql`insert into arts.customers (name, email, phone, source) values ('Lee Return', 'lee-return@example.com', '+16105550133', 'import') returning id`;
+    const [v] = await sql`insert into arts.vehicles (customer_id, year, make, model) values (${c.id}, 2017, 'Subaru', 'Outback') returning id`;
+    const page = await phone();
+    await page.goto(`${BASE}/?src=email-step1&k=${bookToken(c.id, 1)}`);
+    await page.waitForURL((u) => !u.searchParams.has('k')); // taken out of the address bar
+    await page.getByText('Oil change', { exact: true }).click();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.locator('button.day').first().click();
+    await page.getByRole('radio', { name: '11:00am' }).click();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.getByRole('radio', { name: /^Wait/ }).click();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.getByText('Welcome back, Lee').waitFor();
+    expect(await page.getByLabel('Email').inputValue()).toBe('lee-return@example.com');
+    expect(await page.getByRole('radio', { name: '2017 Subaru Outback' }).isChecked()).toBe(true);
+    expect(await page.getByLabel('Make').count()).toBe(0); // no car fields for a saved car
+    await page.waitForFunction(() => !(document.querySelector('button.primary') as HTMLButtonElement)?.disabled, null, { timeout: 20000 });
+    await page.getByRole('button', { name: 'Book it' }).click();
+    await page.getByRole('heading', { name: /Request received|You’re booked/ }).waitFor();
+    const [b] = await sql`select customer_id, vehicle_id from arts.bookings where customer_id = ${c.id}`;
+    expect(b).toEqual({ customer_id: c.id, vehicle_id: v.id });
   });
 
   it('shows the phone fallback on a server error', async () => {

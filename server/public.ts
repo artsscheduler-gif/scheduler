@@ -5,6 +5,7 @@ import { getSettings, rpc, db, type ShopSettings } from './db.js';
 import { HttpError, type Result } from './http.js';
 import * as V from './validate.js';
 import { verifyTurnstile } from './turnstile.js';
+import { customerFromKey } from './me.js';
 import { verifyToken, type ManageToken, type UnsubToken } from './tokens.js';
 import {
   availability, cancelAttachment, loadBooking, notifyCreated, publicConfig, rootVersions, toView, withinCutoff,
@@ -60,15 +61,23 @@ export async function postBook(body: unknown, ip: string): Promise<Result> {
   await limit(`book:email:${input.email}`, s.rate_limit_contact_per_day, 86400);
   await limit(`book:phone:${input.phone}`, s.rate_limit_contact_per_day, 86400);
 
+  // A returning customer's key books under their record, optionally with one of their cars.
+  const me = input.key ? await customerFromKey(input.key) : null;
+  if (input.key && !me) throw new HttpError(401, { error: 'invalid_link' });
+  if (input.vehicle_id && !me?.profile.vehicles.some((v) => v.id === input.vehicle_id)) throw new V.ValidationError('vehicle_id', 'not one of your cars');
+  if (!input.vehicle && !input.vehicle_id) throw new V.ValidationError('vehicle', 'required');
+
   const r = await rpc<{ ok: boolean; booking_id?: string; status?: string; violations?: string[] }>('create_booking', {
     p: {
+      ...(me ? { customer_id: me.id } : {}),
+      ...(input.vehicle_id ? { vehicle_id: input.vehicle_id } : {}),
       date: input.date,
       kind: input.kind,
       start_time: input.start_time,
       service_ids: input.service_ids,
       customer_notes: input.customer_notes,
       customer: { name: input.name, email: input.email, phone: input.phone },
-      vehicle: input.vehicle,
+      ...(input.vehicle ? { vehicle: input.vehicle } : {}),
       created_by_type: 'public',
       source: input.source,
       actor: { type: 'customer', label: input.name },

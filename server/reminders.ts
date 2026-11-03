@@ -12,7 +12,7 @@ import { sendEmail } from './email/send.js';
 import { emailProvider } from './email/provider.js';
 import { withRetry } from './retry.js';
 import * as T from './email/templates.js';
-import { oneClickUnsubscribeUrl, unsubscribeUrl } from './tokens.js';
+import { oneClickUnsubscribeUrl, personalBookingUrl, unsubscribeUrl } from './tokens.js';
 import { mailProvider, type Address } from './mail/provider.js';
 import { renderPostcard, trackedBookingUrl } from './postcard.js';
 import { loadBooking, manageLink, toView, vehicleText } from './bookings.js';
@@ -251,7 +251,8 @@ export async function runServiceReminders(s: ShopSettings, on: string, deadline 
         vehicle: (p.item.vehicle_id && veh.get(p.item.vehicle_id)) || '',
         dueDate: p.item.due_date,
         overdue: p.item.due_date < on,
-        bookUrl: (() => { const u = new URL(s.booking_url); u.searchParams.set('src', `email-step${p.rule.step}`); return u.toString(); })(),
+        // Personal link: opens booking with their details and cars filled in.
+        bookUrl: personalBookingUrl(s.booking_url, c.id, `email-step${p.rule.step}`),
         unsubscribeUrl: unsubscribeUrl(c.id),
       });
       const claim = await claimStep(base);
@@ -368,7 +369,7 @@ export async function sendBatch(s: ShopSettings, batchId: string, approvedBy: st
         undeliverable++;
         continue;
       }
-      const card = await renderPostcard(s, { name: c.name, service: r.services?.name ?? 'service', vehicle: vehicleText(r.vehicles), due_date: r.due_date });
+      const card = await renderPostcard(s, { name: c.name, service: r.services?.name ?? 'service', vehicle: vehicleText(r.vehicles), due_date: r.due_date, customerId: c.id });
       const res = await withRetry(() => mp.sendPostcard({ to: addressOf(c), from, front: card.front, back: card.back, size: s.postcard_size, idempotencyKey: r.id }), 3, process.env.VITEST ? 1 : 500);
       if (res.error) throw res.error;
       await db().from('reminder_sends').update({ status: 'sent', provider_id: res.value!.id, cost_cents: res.value!.costCents ?? s.postcard_cost_cents, sent_at: new Date().toISOString() }).eq('id', r.id);

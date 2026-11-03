@@ -38,6 +38,9 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export type ClosedWhy = 'full' | 'not_wait_eligible' | 'blocked' | 'outside_hours' | 'past' | 'unavailable';
 export interface OpenTime { time: string; wait: boolean; dropoff: boolean; wait_why?: ClosedWhy; dropoff_why?: ClosedWhy }
 
+// A returning customer, unlocked by their booking key.
+export interface Profile { name: string; email: string | null; phone: string | null; vehicles: { id: string; label: string }[] }
+
 export const api = {
   config: () => call<PublicConfig>('/api/availability?config=1'),
   days: (services: string[], t?: string) =>
@@ -49,6 +52,10 @@ export const api = {
   cancel: (t: string) => call<any>('/api/cancel', { method: 'POST', body: JSON.stringify({ t }) }),
   reschedule: (body: unknown) => call<any>('/api/reschedule', { method: 'POST', body: JSON.stringify(body) }),
   changeServices: (body: unknown) => call<any>('/api/change-services', { method: 'POST', body: JSON.stringify(body) }),
+  me: (k: string) => call<Profile>(`/api/me?${new URLSearchParams({ k })}`),
+  sendCode: (email: string) => call<{ ok: true }>('/api/me', { method: 'POST', body: JSON.stringify({ action: 'code', email }) }),
+  verifyCode: (email: string, code: string, remember: boolean) =>
+    call<{ key: string; profile: Profile }>('/api/me', { method: 'POST', body: JSON.stringify({ action: 'verify', email, code, remember }) }),
   unsubscribe: (t: string, channel: 'email' | 'mail') => call<any>('/api/unsubscribe', { method: 'POST', body: JSON.stringify({ t, channel }) }),
 };
 

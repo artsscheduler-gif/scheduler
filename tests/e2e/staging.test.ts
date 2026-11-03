@@ -144,4 +144,28 @@ describe.skipIf(!staging)('Staging: simulator and outbox', () => {
     await page.getByText('You', { exact: true }).waitFor();
     expect(errors).toEqual([]);
   }, 120000);
+
+  it('Find my cars: an emailed code fills in a returning customer', async () => {
+    await sql`insert into arts.customers (name, email, phone, source) values ('Kim Code', 'kim-code@example.com', '+16105550144', 'import')`;
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 740 } });
+    const page = await ctx.newPage();
+    await page.route('https://vpic.nhtsa.dot.gov/**', (r) => r.fulfill({ json: { Results: [] } }));
+    await page.goto(BASE);
+    await page.getByText('Oil change', { exact: true }).click();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.locator('button.day').first().click();
+    await page.getByRole('radio', { name: '9:30am' }).click();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.getByRole('radio', { name: /^Drop off/ }).click();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.getByRole('button', { name: 'Find my cars' }).click();
+    await page.getByLabel('Your email').fill('kim-code@example.com');
+    await page.getByRole('button', { name: 'Email me a code' }).click();
+    await page.getByLabel('6-digit code').waitFor();
+    const [mail] = await sql`select subject from arts.email_outbox where to_email = 'kim-code@example.com' order by created_at desc limit 1`;
+    await page.getByLabel('6-digit code').fill(mail.subject.slice(0, 6));
+    await page.getByRole('button', { name: 'Continue' }).click();
+    await page.getByText('Welcome back, Kim').waitFor();
+    expect(await page.getByLabel('Phone').inputValue()).toBe('(610) 555-0144');
+  });
 });

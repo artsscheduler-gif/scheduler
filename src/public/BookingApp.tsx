@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api, ApiError } from './api';
 import { CallUs, KindPicker, ServicePicker, Shell, SlotPicker, Turnstile, useConfig, type Picked } from './components';
 import { VehicleFields } from './vehicle';
+import { FindMyCars, useReturningCustomer } from './returning';
 import { formatDate, formatTime } from '../../shared/time';
+import { formatPhone } from '../../shared/phone';
 
 type Step = 1 | 2 | 3 | 4 | 'done' | 'outage';
 
@@ -25,6 +27,11 @@ export function BookingApp() {
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [result, setResult] = useState<Awaited<ReturnType<typeof api.book>> | null>(null);
   const [slotGone, setSlotGone] = useState(false);
+  const me = useReturningCustomer();
+  // Which of their cars on file this visit is for ('new' = a different car).
+  const [carId, setCarId] = useState<string>('new');
+  useEffect(() => setCarId(me.profile?.vehicles[0]?.id ?? 'new'), [me.profile]);
+  const savedCar = me.profile && carId !== 'new' ? carId : null;
 
   const waitAllowed = useMemo(
     () => !!config && serviceIds.length > 0 && serviceIds.every((id) => config.services.find((s) => s.id === id)?.wait_eligible),
@@ -69,12 +76,15 @@ export function BookingApp() {
         name: String(f.get('name') ?? ''),
         email: String(f.get('email') ?? ''),
         phone: String(f.get('phone') ?? ''),
-        vehicle: {
-          year: String(f.get('year') ?? ''),
-          make: String(f.get('make') ?? ''),
-          model: String(f.get('model') ?? ''),
-          notes: String(f.get('vnotes') ?? ''),
-        },
+        ...(savedCar ? { vehicle_id: savedCar } : {
+          vehicle: {
+            year: String(f.get('year') ?? ''),
+            make: String(f.get('make') ?? ''),
+            model: String(f.get('model') ?? ''),
+            notes: String(f.get('vnotes') ?? ''),
+          },
+        }),
+        ...(me.key ? { k: me.key } : {}),
         turnstile: token ?? '',
         ...(sourceParam() ? { source: sourceParam() } : {}),
       });
@@ -87,6 +97,10 @@ export function BookingApp() {
         setStep(2);
       } else if (err instanceof ApiError && err.code === 'invalid' && err.field) {
         setFieldError(err.field);
+      } else if (err instanceof ApiError && err.code === 'invalid_link') {
+        // Their saved sign-in expired: fall back to typing the details.
+        me.signOut();
+        setFieldError('signin');
       } else if (err instanceof ApiError && err.code === 'verification_failed') {
         setFieldError('turnstile');
       } else {
@@ -182,26 +196,51 @@ export function BookingApp() {
           <p className="lede">
             {selectedNames} · {formatDate(slot.date, { weekday: 'short', month: 'short', day: 'numeric' })} at {formatTime(slot.time.time)}, {kind === 'wait' ? 'waiting' : 'drop off'}
           </p>
-          <form onSubmit={submit} noValidate={false}>
+          {me.profile ? (
+            <div className="welcome-back">
+              Welcome back, <b>{me.profile.name.split(' ')[0]}</b>. <button type="button" className="linklike small" onClick={me.signOut}>Not you?</button>
+            </div>
+          ) : (
+            <FindMyCars onIn={me.signIn} />
+          )}
+          {fieldError === 'signin' && <p className="notice">Please fill in your details below.</p>}
+          <form onSubmit={submit} noValidate={false} key={me.profile ? 'known' : 'new'}>
             <label className={`field ${errFor('name') ? 'bad' : ''}`}>
               <span>Name</span>
-              <input name="name" autoComplete="name" required maxLength={100} />
+              <input name="name" autoComplete="name" required maxLength={100} defaultValue={me.profile?.name ?? ''} />
             </label>
             <label className={`field ${errFor('phone') ? 'bad' : ''}`}>
               <span>Phone</span>
-              <input name="phone" type="tel" autoComplete="tel" inputMode="tel" required maxLength={20} />
+              <input name="phone" type="tel" autoComplete="tel" inputMode="tel" required maxLength={20} defaultValue={formatPhone(me.profile?.phone) || ''} />
               {errFor('phone') && <span className="field-err">Enter a 10-digit phone number.</span>}
             </label>
             <label className={`field ${errFor('email') ? 'bad' : ''}`}>
               <span>Email</span>
-              <input name="email" type="email" autoComplete="email" required maxLength={254} />
+              <input name="email" type="email" autoComplete="email" required maxLength={254} defaultValue={me.profile?.email ?? ''} />
               {errFor('email') && <span className="field-err">Check your email address.</span>}
             </label>
-            <VehicleFields errFor={errFor} />
-            <label className="field">
-              <span>Car notes <span className="muted">(optional — color, plate)</span></span>
-              <input name="vnotes" maxLength={200} />
-            </label>
+            {!!me.profile?.vehicles.length && (
+              <fieldset className="car-choices">
+                <legend>Which car?</legend>
+                {me.profile.vehicles.map((v) => (
+                  <label key={v.id} className={`car-choice ${carId === v.id ? 'on' : ''}`}>
+                    <input type="radio" name="car" checked={carId === v.id} onChange={() => setCarId(v.id)} /> {v.label}
+                  </label>
+                ))}
+                <label className={`car-choice ${carId === 'new' ? 'on' : ''}`}>
+                  <input type="radio" name="car" checked={carId === 'new'} onChange={() => setCarId('new')} /> A different car
+                </label>
+              </fieldset>
+            )}
+            {!savedCar && (
+              <>
+                <VehicleFields errFor={errFor} />
+                <label className="field">
+                  <span>Car notes <span className="muted">(optional — color, plate)</span></span>
+                  <input name="vnotes" maxLength={200} />
+                </label>
+              </>
+            )}
             <Turnstile key={tsKey} onToken={setToken} />
             {fieldError === 'turnstile' && <p className="field-err">Please complete the check above and try again.</p>}
             {fieldError && fieldError !== 'turnstile' && <p className="field-err" role="alert">Please fix the highlighted field.</p>}
