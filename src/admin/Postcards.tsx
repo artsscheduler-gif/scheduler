@@ -52,22 +52,24 @@ function Batch({ b, onDone }: { b: any; onDone: () => void }) {
   );
 }
 
+const PRINTER = { lob: 'Lob', postgrid: 'PostGrid', stub: '' } as Record<string, string>;
 const MODE_TEXT = {
-  stub: 'Postcards are not connected to a printer: approving a batch marks it sent, but nothing is made or mailed. To connect Lob, add LOB_API_KEY and set MAIL_PROVIDER=lob in Vercel.',
-  'lob-test': 'Connected to Lob with a test key: Lob makes each card (see “View card”) but nothing is printed or mailed, and nothing is charged.',
-  'lob-live': 'Connected to Lob with a live key: approved cards are printed and mailed, and each one costs money.',
+  stub: () => 'Postcards are not connected to a printer: approving a batch marks it sent, but nothing is made or mailed. To connect one, set MAIL_PROVIDER to lob or postgrid and add its key (LOB_API_KEY or POSTGRID_API_KEY) in Vercel.',
+  test: (p: string) => `Connected to ${p} with a test key: ${p} makes each card (see “View card”) but nothing is printed or mailed, and nothing is charged.`,
+  live: (p: string) => `Connected to ${p} with a live key: approved cards are printed and mailed, and each one costs money.`,
 } as const;
 
 // Which printer is connected, and a one-card test to the shop's own address.
 function PrinterCheck() {
   const role = useRole();
-  const status = useQuery(() => adminPost<{ mode: keyof typeof MODE_TEXT }>('postcard-status', {}));
+  const status = useQuery(() => adminPost<{ mode: keyof typeof MODE_TEXT; printer: string }>('postcard-status', {}));
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ id: string; preview_url: string | null; mode: string } | null>(null);
+  const [result, setResult] = useState<{ id: string; preview_url: string | null; mode: string; printer: string } | null>(null);
   const [err, setErr] = useState('');
   const mode = status.data?.mode;
+  const printer = PRINTER[status.data?.printer ?? 'stub'] ?? status.data?.printer ?? '';
   async function test() {
-    if (mode === 'lob-live' && !confirm('This prints and mails one real postcard to the shop’s own address, and costs money. Send it?')) return;
+    if (mode === 'live' && !confirm('This prints and mails one real postcard to the shop’s own address, and costs money. Send it?')) return;
     setBusy(true);
     setErr('');
     setResult(null);
@@ -83,14 +85,14 @@ function PrinterCheck() {
   return (
     <div className={`settings-section printer-${mode}`}>
       <h2>Printer</h2>
-      <p>{MODE_TEXT[mode]}</p>
+      <p>{MODE_TEXT[mode](printer)}</p>
       {role !== 'staff' && <button className="btn small" disabled={busy} onClick={test}>{busy ? 'Sending…' : 'Send a test postcard to the shop'}</button>}
       {result && (
         <p className="small" role="status">
-          {result.mode === 'stub' ? 'Test card made (not connected to a printer, so nothing was sent).' : <>Lob accepted the card ({result.id}).{result.preview_url && <> <a href={result.preview_url} target="_blank" rel="noreferrer">View card (PDF)</a></>}</>}
+          {result.mode === 'stub' ? 'Test card made (not connected to a printer, so nothing was sent).' : <>{printer} accepted the card ({result.id}).{!result.preview_url && ' The PDF appears in its dashboard once rendered.'}{result.preview_url && <> <a href={result.preview_url} target="_blank" rel="noreferrer">View card (PDF)</a></>}</>}
         </p>
       )}
-      {err && <p className="error small" role="alert">Lob said: {err}</p>}
+      {err && <p className="error small" role="alert">{printer || 'The printer'} said: {err}</p>}
     </div>
   );
 }

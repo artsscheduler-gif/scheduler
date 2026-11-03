@@ -22,4 +22,5 @@ export const env = {
   get deliverFrom() { return process.env.EMAIL_DELIVER_FROM || 'Art’s Servicenter TEST <onboarding@resend.dev>'; },
   get mailProvider() { return process.env.MAIL_PROVIDER ?? 'stub'; },
   get lobKey() { return process.env.LOB_API_KEY ?? ''; },
+  get postgridKey() { return process.env.POSTGRID_API_KEY ?? ''; },
 };

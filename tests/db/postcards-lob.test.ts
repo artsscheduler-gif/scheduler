@@ -1,10 +1,10 @@
 // Postcards ready for Lob: QR as a link, test-key address checks, test card.
-import { describe, it, expect, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import { PassThrough } from 'node:stream';
 import { sql, resetData, adminToken, reqWith } from './helpers';
 import { renderPostcard } from '../../server/postcard';
 import { getSettings } from '../../server/db';
-import { LobProvider } from '../../server/mail/provider';
+import { LobProvider, PostGridProvider } from '../../server/mail/provider';
 import { adminAction } from '../../server/admin';
 import qr from '../../api/qr';
 
@@ -48,10 +48,33 @@ describe('Postcards for Lob', () => {
 
   it('owners can send a test card; it reports the printer mode', async () => {
     const owner = (await adminToken('owner')).token;
-    expect((await adminAction(reqWith(owner), 'postcard-status', {})).body).toEqual({ mode: 'stub' });
+    expect((await adminAction(reqWith(owner), 'postcard-status', {})).body).toEqual({ mode: 'stub', printer: 'stub' });
     const r = (await adminAction(reqWith(owner), 'postcard-test', {})).body as any;
     expect(r).toMatchObject({ mode: 'stub' });
     const staff = (await adminToken('staff')).token;
     await expect(adminAction(reqWith(staff), 'postcard-test', {})).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('PostGrid: sends the card as HTML with an idempotency key and returns its PDF link', async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url: any, init?: any) => {
+      calls.push({ url: String(url), init });
+      return new Response(JSON.stringify(init?.method === 'POST' ? { id: 'postcard_123' } : { id: 'postcard_123', url: 'https://pg.example/card.pdf' }), { status: 200 });
+    });
+    try {
+      const pg = new PostGridProvider('test_sk_abc');
+      const addr = { name: 'Pat Doe', line1: '1 Main St', city: 'Easton', state: 'PA', zip: '18042' };
+      const r = await pg.sendPostcard({ to: addr, from: addr, front: '<p>f</p>', back: '<p>b</p>', size: '4x6', idempotencyKey: 'key-1' });
+      expect(r).toEqual({ id: 'postcard_123', costCents: null, previewUrl: 'https://pg.example/card.pdf' });
+      const sent = calls[0];
+      expect(sent.url).toBe('https://api.postgrid.com/print-mail/v1/postcards');
+      expect((sent.init!.headers as Record<string, string>)['x-api-key']).toBe('test_sk_abc');
+      expect((sent.init!.headers as Record<string, string>)['Idempotency-Key']).toBe('key-1');
+      const body = JSON.parse(String(sent.init!.body));
+      expect(body).toMatchObject({ size: '6x4', frontHTML: '<p>f</p>', backHTML: '<p>b</p>', to: { firstName: 'Pat Doe', addressLine1: '1 Main St', postalOrZip: '18042', country: 'US' } });
+      expect(pg.testMode).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

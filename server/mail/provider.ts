@@ -75,6 +75,51 @@ export class LobProvider implements MailProvider {
   }
 }
 
+// PostGrid: https://postgrid.readme.io. A test_sk key renders the card (with a
+// PDF) but never prints or mails. PostGrid's address check is a separate
+// product, so addresses aren't verified here; returned mail shows in its dashboard.
+export class PostGridProvider implements MailProvider {
+  name = 'postgrid';
+  constructor(private key: string) {}
+
+  get testMode() {
+    return this.key.startsWith('test_');
+  }
+
+  private contact(a: Address) {
+    return { firstName: a.name.slice(0, 40), addressLine1: a.line1, addressLine2: a.line2 || undefined, city: a.city, provinceOrState: a.state, postalOrZip: a.zip, country: 'US' };
+  }
+
+  async verify(_a: Address) {
+    return { deliverable: true, detail: 'not checked (PostGrid)' };
+  }
+
+  async sendPostcard(job: PostcardJob) {
+    const res = await fetch('https://api.postgrid.com/print-mail/v1/postcards', {
+      method: 'POST',
+      headers: { 'x-api-key': this.key, 'Content-Type': 'application/json', 'Idempotency-Key': job.idempotencyKey },
+      body: JSON.stringify({
+        to: this.contact(job.to), from: this.contact(job.from), frontHTML: job.front, backHTML: job.back,
+        size: job.size === '6x9' ? '9x6' : '6x4', description: 'Service reminder',
+      }),
+    });
+    const data = (await res.json().catch(() => ({}))) as { id?: string; url?: string; error?: { message?: string; type?: string } };
+    if (!res.ok || !data.id) throw new Error(`PostGrid postcard ${res.status}: ${data.error?.message ?? data.error?.type ?? ''}`);
+    // The PDF link appears once the card is rendered; one quick look, else the dashboard has it.
+    let url = data.url;
+    if (!url) {
+      const again = await fetch(`https://api.postgrid.com/print-mail/v1/postcards/${data.id}`, { headers: { 'x-api-key': this.key } }).then((r) => r.json()).catch(() => ({}));
+      url = (again as { url?: string }).url;
+    }
+    return { id: data.id, costCents: null, previewUrl: url };
+  }
+
+  async ping() {
+    const res = await fetch('https://api.postgrid.com/print-mail/v1/postcards?limit=1', { headers: { 'x-api-key': this.key } });
+    return res.ok;
+  }
+}
+
 // Records jobs in memory. Addresses missing a line1/zip or containing
 // "UNDELIVERABLE" fail verification so tests can exercise that path.
 export class StubMailProvider implements MailProvider {
@@ -99,6 +144,10 @@ export class StubMailProvider implements MailProvider {
 let provider: MailProvider | null = null;
 
 export function mailProvider(): MailProvider {
-  if (!provider) provider = env.mailProvider === 'lob' && env.lobKey ? new LobProvider(env.lobKey) : new StubMailProvider();
+  if (!provider) {
+    provider = env.mailProvider === 'lob' && env.lobKey ? new LobProvider(env.lobKey)
+      : env.mailProvider === 'postgrid' && env.postgridKey ? new PostGridProvider(env.postgridKey)
+      : new StubMailProvider();
+  }
   return provider;
 }

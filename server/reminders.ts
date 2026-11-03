@@ -397,13 +397,13 @@ export async function approveBatch(a: Admin, body: unknown): Promise<Result> {
 
 // Which printer postcards go to: the stub (nothing happens), Lob with a test
 // key (Lob makes the card, nothing is mailed) or Lob live (mailed, costs money).
-export function postcardMode(): 'stub' | 'lob-test' | 'lob-live' {
+export function postcardMode(): 'stub' | 'test' | 'live' {
   const mp = mailProvider() as { name: string; testMode?: boolean };
-  return mp.name !== 'lob' ? 'stub' : mp.testMode ? 'lob-test' : 'lob-live';
+  return mp.name === 'stub' ? 'stub' : mp.testMode ? 'test' : 'live';
 }
 
 export async function postcardStatus(): Promise<Result> {
-  return { status: 200, body: { mode: postcardMode() } };
+  return { status: 200, body: { mode: postcardMode(), printer: mailProvider().name } };
 }
 
 // One sample card to the shop's own address, to check the printer end to end.
@@ -414,7 +414,7 @@ export async function testPostcard(a: Admin): Promise<Result> {
   const r = await mailProvider().sendPostcard({ to: shop, from: shop, front: card.front, back: card.back, size: s.postcard_size, idempotencyKey: `test-postcard:${Date.now()}` });
   const mode = postcardMode();
   await rpc('audit', { p_actor: { type: 'admin', id: a.id, label: a.label }, p_action: 'postcard.test', p_entity: 'postcard', p_entity_id: r.id, p_before: null, p_after: { mode } });
-  return { status: 200, body: { id: r.id, preview_url: r.previewUrl ?? null, mode } };
+  return { status: 200, body: { id: r.id, preview_url: r.previewUrl ?? null, mode, printer: mailProvider().name } };
 }
 
 export async function postcardPreview(body: unknown): Promise<Result> {

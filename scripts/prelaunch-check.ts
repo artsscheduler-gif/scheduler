@@ -53,10 +53,12 @@ await step('Turnstile uses real keys', () =>
 await step('Email provider is live', () =>
   E.EMAIL_PROVIDER === 'resend' && E.RESEND_API_KEY ? ['PASS', 'resend'] : ['FAIL', `EMAIL_PROVIDER=${E.EMAIL_PROVIDER ?? 'stub'} (stub sends nothing)`]);
 
-await step('Print provider is live', () =>
-  E.MAIL_PROVIDER === 'lob' && (E.LOB_API_KEY ?? '').startsWith('live_')
-    ? ['PASS', 'lob live key']
-    : ['FAIL', E.LOB_API_KEY?.startsWith('test_') ? 'Lob test key: postcards render but never mail' : `MAIL_PROVIDER=${E.MAIL_PROVIDER ?? 'stub'}`]);
+await step('Print provider is live', () => {
+  if (E.MAIL_PROVIDER === 'lob' && (E.LOB_API_KEY ?? '').startsWith('live_')) return ['PASS', 'lob live key'];
+  if (E.MAIL_PROVIDER === 'postgrid' && (E.POSTGRID_API_KEY ?? '').startsWith('live_')) return ['PASS', 'postgrid live key'];
+  const key = E.MAIL_PROVIDER === 'postgrid' ? E.POSTGRID_API_KEY : E.LOB_API_KEY;
+  return ['FAIL', key?.startsWith('test_') ? `${E.MAIL_PROVIDER} test key: postcards render but never mail` : `MAIL_PROVIDER=${E.MAIL_PROVIDER ?? 'stub'}`];
+});
 
 await step('Anon key cannot read or write any table', async () => {
   const r = await anonCheck(E.SUPABASE_URL!, E.VITE_SUPABASE_ANON_KEY ?? E.SUPABASE_ANON_KEY!, E.SUPABASE_SERVICE_ROLE_KEY!);
