@@ -22,6 +22,8 @@ export interface MailProvider {
   name: string;
   verify(a: Address): Promise<{ deliverable: boolean; detail: string }>;
   sendPostcard(job: PostcardJob): Promise<{ id: string; costCents: number | null; previewUrl?: string }>;
+  // The printer's PDF proof, once rendered (null while it's still being made).
+  previewUrl?(id: string): Promise<string | null>;
   ping(): Promise<boolean>;
 }
 
@@ -69,6 +71,11 @@ export class LobProvider implements MailProvider {
     return { id: data.id, costCents: null, previewUrl: data.url };
   }
 
+  async previewUrl(id: string) {
+    const res = await fetch(`https://api.lob.com/v1/postcards/${encodeURIComponent(id)}`, { headers: this.headers() });
+    return res.ok ? (((await res.json()) as { url?: string }).url ?? null) : null;
+  }
+
   async ping() {
     const res = await fetch('https://api.lob.com/v1/postcards?limit=1', { headers: this.headers() });
     return res.ok;
@@ -112,6 +119,11 @@ export class PostGridProvider implements MailProvider {
       url = (again as { url?: string }).url;
     }
     return { id: data.id, costCents: null, previewUrl: url };
+  }
+
+  async previewUrl(id: string) {
+    const res = await fetch(`https://api.postgrid.com/print-mail/v1/postcards/${encodeURIComponent(id)}`, { headers: { 'x-api-key': this.key } });
+    return res.ok ? (((await res.json()) as { url?: string }).url ?? null) : null;
   }
 
   async ping() {

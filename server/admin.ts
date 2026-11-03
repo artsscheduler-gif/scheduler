@@ -13,7 +13,7 @@ import { sendEmail } from './email/send.js';
 import * as T from './email/templates.js';
 import { normalizePhone, normalizeEmail } from '../shared/phone.js';
 import { toCsv, EXPORTS } from './export.js';
-import { approveBatch, postcardPreview, postcardStatus, testPostcard } from './reminders.js';
+import { approveBatch, postcardPreview, postcardProof, postcardStatus, testPostcard } from './reminders.js';
 import { simulatorAction } from './simulator.js';
 
 export interface Admin { id: string; email: string; role: Role; label: string }
@@ -555,6 +555,7 @@ export async function adminAction(req: Req, action: string, body: unknown): Prom
     case 'postcard-preview': return postcardPreview(body);
     case 'postcard-status': return postcardStatus();
     case 'postcard-test': return testPostcard(a);
+    case 'postcard-proof': return postcardProof(body);
     default: throw new HttpError(404, { error: 'unknown_action' });
   }
 }

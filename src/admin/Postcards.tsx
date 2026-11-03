@@ -15,7 +15,7 @@ function Preview({ html, size }: { html: string; size: string }) {
 }
 
 function Batch({ b, onDone }: { b: any; onDone: () => void }) {
-  const rows = useQuery(() => must(supabase.from('reminder_sends').select('id, status, due_date, preview_url, customers(name, city, state, mail_opt_out), services(name)').eq('batch_id', b.id).order('created_at')) as Promise<any[]>, [b.id]);
+  const rows = useQuery(() => must(supabase.from('reminder_sends').select('id, status, due_date, preview_url, provider_id, customers(name, city, state, mail_opt_out), services(name)').eq('batch_id', b.id).order('created_at')) as Promise<any[]>, [b.id]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   async function approve() {
@@ -43,7 +43,7 @@ function Batch({ b, onDone }: { b: any; onDone: () => void }) {
       <table className="tbl">
         <tbody>
           {rows.data?.map((r) => (
-            <tr key={r.id}><td>{r.customers?.name}</td><td>{r.customers?.city}, {r.customers?.state}</td><td>{r.services?.name} due {r.due_date}</td><td>{r.status}{r.customers?.mail_opt_out ? ' (opted out; will be skipped)' : ''}{r.preview_url && <> · <a href={r.preview_url} target="_blank" rel="noreferrer">View card</a></>}</td></tr>
+            <tr key={r.id}><td>{r.customers?.name}</td><td>{r.customers?.city}, {r.customers?.state}</td><td>{r.services?.name} due {r.due_date}</td><td>{r.status}{r.customers?.mail_opt_out ? ' (opted out; will be skipped)' : ''}{r.provider_id && !r.provider_id.startsWith('stub') && <> · <ProofLink id={r.provider_id} url={r.preview_url} /></>}</td></tr>
           ))}
         </tbody>
       </table>
@@ -58,6 +58,25 @@ const MODE_TEXT = {
   test: (p: string) => `Connected to ${p} with a test key: ${p} makes each card (see “View card”) but nothing is printed or mailed, and nothing is charged.`,
   live: (p: string) => `Connected to ${p} with a live key: approved cards are printed and mailed, and each one costs money.`,
 } as const;
+
+// The printer's PDF proof: shown if saved, otherwise fetched on request (it
+// takes a few seconds after sending for the printer to render it).
+function ProofLink({ id, url: saved }: { id: string; url?: string | null }) {
+  const [url, setUrl] = useState(saved ?? null);
+  const [state, setState] = useState<'' | 'busy' | 'notyet'>('');
+  if (url) return <a href={url} target="_blank" rel="noreferrer">View card</a>;
+  async function get() {
+    setState('busy');
+    const r = await adminPost<{ url: string | null }>('postcard-proof', { id });
+    if (r.url) { setUrl(r.url); window.open(r.url, '_blank', 'noreferrer'); setState(''); } else setState('notyet');
+  }
+  return (
+    <>
+      <button className="linklike" onClick={get} disabled={state === 'busy'}>{state === 'busy' ? 'Getting card…' : 'View card'}</button>
+      {state === 'notyet' && <span className="muted"> (still being made, try again in a minute)</span>}
+    </>
+  );
+}
 
 // Which printer is connected, and a one-card test to the shop's own address.
 function PrinterCheck() {
@@ -89,7 +108,7 @@ function PrinterCheck() {
       {role !== 'staff' && <button className="btn small" disabled={busy} onClick={test}>{busy ? 'Sending…' : 'Send a test postcard to the shop'}</button>}
       {result && (
         <p className="small" role="status">
-          {result.mode === 'stub' ? 'Test card made (not connected to a printer, so nothing was sent).' : <>{printer} accepted the card ({result.id}).{!result.preview_url && ' The PDF appears in its dashboard once rendered.'}{result.preview_url && <> <a href={result.preview_url} target="_blank" rel="noreferrer">View card (PDF)</a></>}</>}
+          {result.mode === 'stub' ? 'Test card made (not connected to a printer, so nothing was sent).' : <>{printer} accepted the card ({result.id}). <ProofLink id={result.id} url={result.preview_url} /></>}
         </p>
       )}
       {err && <p className="error small" role="alert">{printer || 'The printer'} said: {err}</p>}

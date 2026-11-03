@@ -417,6 +417,15 @@ export async function testPostcard(a: Admin): Promise<Result> {
   return { status: 200, body: { id: r.id, preview_url: r.previewUrl ?? null, mode, printer: mailProvider().name } };
 }
 
+// Fetches (and saves) a card's PDF proof from the printer once it's ready.
+export async function postcardProof(body: unknown): Promise<Result> {
+  const b = V.obj(body, ['id']);
+  const id = V.str(b.id, 'id', { max: 100 });
+  const url = (await mailProvider().previewUrl?.(id)) ?? null;
+  if (url) await db().from('reminder_sends').update({ preview_url: url }).eq('provider_id', id);
+  return { status: 200, body: { url } };
+}
+
 export async function postcardPreview(body: unknown): Promise<Result> {
   const b = V.obj(body ?? {}, ['front_html', 'back_html']);
   const s = await getSettings();

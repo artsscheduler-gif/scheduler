@@ -35,7 +35,7 @@ export const TECH_SETTINGS = new Set([
 // Minimum role for each admin action.
 const ACTION_ROLE: Record<string, Role> = {
   decide: 'staff', check: 'staff', create: 'staff', move: 'staff', status: 'staff', resend: 'staff',
-  customer: 'staff', vehicle: 'staff', merge: 'staff', unmerge: 'staff', block: 'staff', 'postcard-preview': 'staff', 'postcard-status': 'staff',
+  customer: 'staff', vehicle: 'staff', merge: 'staff', unmerge: 'staff', block: 'staff', 'postcard-preview': 'staff', 'postcard-status': 'staff', 'postcard-proof': 'staff',
   forget: 'owner', settings: 'owner', service: 'owner', level: 'owner', closure: 'owner', rule: 'owner',
   export: 'owner', 'batch-approve': 'owner', 'workbook-apply': 'owner', 'postcard-test': 'owner',
   'team-list': 'owner', 'team-invite': 'owner', 'team-remove': 'owner', 'team-role': 'owner', 'team-reset-mfa': 'owner',
