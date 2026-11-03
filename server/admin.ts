@@ -194,7 +194,12 @@ async function updateCustomer(a: Admin, body: unknown): Promise<Result> {
 }
 
 async function updateVehicle(a: Admin, body: unknown): Promise<Result> {
-  const b = V.obj(body, ['id', 'customer_id', 'year', 'make', 'model', 'notes']);
+  const b = V.obj(body, ['id', 'customer_id', 'year', 'make', 'model', 'notes', 'delete']);
+  if (b.delete === true) {
+    const r = await rpc<{ ok: boolean; error?: string }>('delete_vehicle', { p_vehicle: V.uuid(b.id, 'id'), p_actor: actor(a) });
+    if (!r.ok) throw new HttpError(404, { error: r.error });
+    return { status: 200, body: r };
+  }
   const row = {
     year: V.int(b.year, 'year', 1950, new Date().getFullYear() + 2, true),
     make: V.str(b.make, 'make', { max: 40, optional: true }) || null,
@@ -211,6 +216,14 @@ async function updateVehicle(a: Admin, body: unknown): Promise<Result> {
   const { data: after } = await db().from('vehicles').insert({ ...row, customer_id: V.uuid(b.customer_id, 'customer_id') }).select('*').single();
   await audit(a, 'vehicle.create', 'vehicle', after!.id, null, after);
   return { status: 200, body: after };
+}
+
+// "Forget me": removes the customer's personal details, vehicles and history.
+async function forgetCustomer(a: Admin, body: unknown): Promise<Result> {
+  const b = V.obj(body, ['customer_id']);
+  const r = await rpc<{ ok: boolean; error?: string; cancelled_upcoming?: number }>('forget_customer', { p_customer: V.uuid(b.customer_id, 'customer_id'), p_actor: actor(a) });
+  if (!r.ok) throw new HttpError(404, { error: r.error });
+  return { status: 200, body: r };
 }
 
 // Merges a duplicate into the customer being kept, in one transaction, and
@@ -474,6 +487,7 @@ export async function adminAction(req: Req, action: string, body: unknown): Prom
     case 'vehicle': return updateVehicle(a, body);
     case 'merge': return mergeCustomers(a, body);
     case 'unmerge': return unmergeCustomers(a, body);
+    case 'forget': return forgetCustomer(a, body);
     case 'settings': return updateSettings(a, body);
     case 'service': return upsertService(a, body);
     case 'level': return setLevel(a, body);

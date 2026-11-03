@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { supabase } from '../lib/supabase';
 import { adminPost } from './api';
 import { must, useQuery } from './shared';
@@ -92,6 +92,14 @@ function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
     c.reload(); history.reload(); bookings.reload(); merges.reload(); onChanged();
   }
 
+  async function forget() {
+    if (!confirm(`Forget ${cust.name}? Their details, vehicles and history are removed and upcoming appointments are cancelled. This can’t be undone.`)) return;
+    if (prompt('Type FORGET to confirm') !== 'FORGET') return;
+    const r = await adminPost('forget', { customer_id: id });
+    setMsg(`Removed.${r.cancelled_upcoming ? ` ${r.cancelled_upcoming} upcoming appointment(s) cancelled.` : ''}`);
+    c.reload(); history.reload(); bookings.reload(); onChanged();
+  }
+
   async function unmerge(mergeId: string, name: string) {
     if (!confirm(`Undo the merge with “${name}”? Their bookings, vehicles and history go back to their own record.`)) return;
     try {
@@ -159,7 +167,11 @@ function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
       <table className="tbl">
         <tbody>
           {(bookings.data as any[] | null)?.map((b) => (
-            <tr key={b.id}><td>{formatDate(b.date, { month: 'short', day: 'numeric', year: 'numeric' })}</td><td>{b.kind === 'wait' ? formatTime(b.start_time) : 'drop-off'}</td><td>{b.booking_services.map((x: any) => x.services.name).join(', ')}</td><td>{STATUS_LABEL[b.status]}</td></tr>
+            <tr key={b.id}>
+              <td><Link to={`/admin?date=${b.date}&booking=${b.id}`}>{formatDate(b.date, { month: 'short', day: 'numeric', year: 'numeric' })}</Link></td>
+              <td>{b.kind === 'wait' ? `${formatTime(b.start_time)} wait` : b.start_time ? `drop-off ${formatTime(b.start_time)}` : 'drop-off'}</td>
+              <td>{b.booking_services.map((x: any) => x.services.name).join(', ')}</td><td>{STATUS_LABEL[b.status]}</td>
+            </tr>
           ))}
         </tbody>
       </table>
@@ -173,6 +185,12 @@ function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
           {history.data?.length === 0 && <tr><td className="muted">None</td></tr>}
         </tbody>
       </table>
+
+      <div className="danger-zone">
+        <h3>Remove this customer</h3>
+        <p className="help">For a customer who asks to be forgotten: removes their name, contact details, vehicles and service history, and cancels upcoming appointments (no email is sent). Past bookings stay without their details. This can’t be undone.</p>
+        <button className="btn small danger" onClick={forget}>Forget this customer</button>
+      </div>
 
       <h3>Reminders sent</h3>
       <table className="tbl">
@@ -195,6 +213,12 @@ function VehicleRow({ v, onSaved }: { v: any; onSaved: () => void }) {
     if (!v.id) e.currentTarget.reset();
     onSaved();
   }
+  async function remove() {
+    const name = [v.year, v.make, v.model].filter(Boolean).join(' ') || 'this vehicle';
+    if (!confirm(`Delete ${name}? Its service history goes too, so reminders for it stop. Past bookings stay.`)) return;
+    await adminPost('vehicle', { id: v.id, delete: true });
+    onSaved();
+  }
   return (
     <tr>
       <td colSpan={4}>
@@ -204,6 +228,7 @@ function VehicleRow({ v, onSaved }: { v: any; onSaved: () => void }) {
           <input name="model" defaultValue={v.model ?? ''} placeholder="Model" aria-label="Model" />
           <input name="notes" defaultValue={v.notes ?? ''} placeholder="Plate / notes" aria-label="Plate or notes" />
           <button className="btn small">{v.id ? 'Save' : 'Add vehicle'}</button>
+          {v.id && <button type="button" className="btn small danger" onClick={remove}>Delete</button>}
         </form>
       </td>
     </tr>

@@ -208,6 +208,70 @@ export function blockLabel(b: Block) {
   return `${when}, ${formatTime(b.start_time)}–${formatTime(b.end_time)}${b.reason ? ` · ${b.reason}` : ''}`;
 }
 
+// Find a booking by customer name, phone, or email, across all dates.
+function BookingSearch({ onPick }: { onPick: (date: string, id: string) => void }) {
+  const [q, setQ] = useState('');
+  const [rows, setRows] = useState<B[] | null>(null);
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) return setRows(null);
+    const timer = setTimeout(async () => {
+      const digits = term.replace(/\D/g, '');
+      const like = `%${term.replace(/[%_,()]/g, ' ')}%`;
+      const ors = [`name.ilike.${like}`, `email.ilike.${like}`, ...(digits.length >= 3 ? [`phone.ilike.%${digits}%`] : [])];
+      const custs = (await must(supabase.from('customers').select('id').is('merged_into', null).or(ors.join(',')).limit(25))) as { id: string }[];
+      if (!custs.length) return setRows([]);
+      const found = (await must(supabase.from('bookings').select(SELECT).in('customer_id', custs.map((c) => c.id)).neq('status', 'replaced').order('date', { ascending: false }).limit(25))) as unknown as B[];
+      setRows(found);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [q]);
+  return (
+    <div className="booking-search">
+      <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a booking: name, phone or email" aria-label="Find a booking" />
+      {rows && (
+        <ul className="search-results">
+          {rows.length === 0 && <li className="muted">No bookings found.</li>}
+          {rows.map((b) => (
+            <li key={b.id}>
+              <button className="linkish" onClick={() => { setQ(''); onPick(b.date, b.id); }}>
+                <strong>{b.customers.name}</strong> · {formatDate(b.date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                {b.start_time ? ` ${formatTime(b.start_time)}` : ''} {b.kind === 'wait' ? 'wait' : 'drop-off'} · {svcNames(b)} · <span className="muted">{STATUS_LABEL[b.status]}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// The day as a plain list for printing (shown only when printing).
+function PrintDay({ s, date, rows, blocks }: { s: Settings; date: string; rows: B[]; blocks: Block[] }) {
+  const live = rows.filter((b) => ['confirmed', 'requested', 'completed'].includes(b.status))
+    .sort((a, b) => (a.start_time ?? '99').localeCompare(b.start_time ?? '99'));
+  return (
+    <div className="print-day">
+      <h2>{s.shop_name} · {formatDate(date)}</h2>
+      {blocks.length > 0 && <p>Blocked: {blocks.map((bl) => `${formatTime(bl.start_time)}–${formatTime(bl.end_time)}${bl.reason ? ` (${bl.reason})` : ''}`).join(', ')}</p>}
+      <table>
+        <thead><tr><th>Time</th><th>Type</th><th>Customer</th><th>Phone</th><th>Vehicle</th><th>Services</th><th>Notes</th><th>Status</th></tr></thead>
+        <tbody>
+          {live.map((b) => (
+            <tr key={b.id}>
+              <td>{b.start_time ? formatTime(b.start_time) : '—'}</td><td>{b.kind === 'wait' ? 'Wait' : 'Drop-off'}</td>
+              <td>{b.customers.name}</td><td>{formatPhone(b.customers.phone)}</td>
+              <td>{vehicle(b)}{b.vehicles?.notes ? ` · ${b.vehicles.notes}` : ''}</td><td>{svcNames(b)}</td>
+              <td>{b.customer_notes}</td><td>{STATUS_LABEL[b.status]}</td>
+            </tr>
+          ))}
+          {live.length === 0 && <tr><td colSpan={8}>No bookings.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // Total minutes covered by possibly overlapping [start, end) spans.
 function mergedMinutes(spans: number[][]) {
   let total = 0;
@@ -269,6 +333,7 @@ export function DayView({ refresh }: { refresh?: unknown } = {}) {
   const [showCancelled, setShowCancelled] = useState(false);
   const [blocking, setBlocking] = useState(false);
   const undoId = params.get('undo');
+  const openId = params.get('booking'); // from a customer's booking list or search
 
   useEffect(() => {
     if (s && !date) setDate(todayIn(s.timezone));
@@ -305,6 +370,15 @@ export function DayView({ refresh }: { refresh?: unknown } = {}) {
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
   useEffect(() => { if (refresh !== undefined) reloadAll(); }, [refresh]);
+
+  // Wait for the booking's own day to load (the previous day's data may come first).
+  useEffect(() => {
+    const b = openId && day.data?.find((x) => x.id === openId);
+    if (!b) return;
+    setDetail(b);
+    params.delete('booking');
+    setParams(params, { replace: true });
+  }, [openId, day.data]);
 
   function reloadAll() {
     requests.reload();
@@ -399,6 +473,8 @@ export function DayView({ refresh }: { refresh?: unknown } = {}) {
         </div>
       )}
 
+      <BookingSearch onPick={(d, id) => { goto(d); params.set('booking', id); setParams(params, { replace: true }); }} />
+
       <section className="queue" aria-label="Waiting for you">
         <h2>Waiting for you {requests.data && <span className="count-pill">{requests.data.rows.length}</span>}</h2>
         {requests.error && <p className="error" role="alert">Couldn’t load requests: {requests.error} <button className="btn small" onClick={requests.reload}>Try again</button></p>}
@@ -429,6 +505,7 @@ export function DayView({ refresh }: { refresh?: unknown } = {}) {
           <input type="date" value={date} onChange={(e) => e.target.value && goto(e.target.value)} aria-label="Go to date" />
           <label className="small"><input type="checkbox" checked={showCancelled} onChange={(e) => setShowCancelled(e.target.checked)} /> show cancelled</label>
           <button className="btn small" onClick={() => setBlocking(true)}>Block time</button>
+          <button className="btn small" onClick={() => window.print()}>Print day</button>
           {layout && layout.cap > 0 && (
             <div className="capacity push">
               <span>Booked <strong>{layout.used}</strong> / {layout.cap} min ({Math.round((100 * layout.used) / layout.cap)}%)</span>
@@ -514,6 +591,7 @@ export function DayView({ refresh }: { refresh?: unknown } = {}) {
             </div>
           </div>
         )}
+        {s && date && day.data && <PrintDay s={s} date={date} rows={day.data} blocks={blocks.data ?? []} />}
         <p className="legend muted small">
           <span className="key st-confirmed" /> confirmed <span className="key st-requested" /> requested (held) <span className="key st-completed" /> completed <span className="key st-no_show" /> no-show · Drag to move · click an empty lane to book
         </p>

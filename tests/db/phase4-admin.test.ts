@@ -238,6 +238,31 @@ describe('Audit log', () => {
   });
 });
 
+describe('Removing vehicles and customers', () => {
+  it('deleting a vehicle removes its history; bookings stay', async () => {
+    const a = await request();
+    const [{ vehicle_id: vid, customer_id: cid }] = await sql`select vehicle_id, customer_id from arts.bookings where id = ${a.id}`;
+    await sql`insert into arts.service_history (customer_id, vehicle_id, service_date, source) values (${cid}, ${vid}, '2025-05-01', 'import')`;
+    expect((await call('vehicle', { id: vid, delete: true })).body).toMatchObject({ ok: true, history_removed: 1 });
+    const [b] = await sql`select vehicle_id from arts.bookings where id = ${a.id}`;
+    expect(b.vehicle_id).toBeNull();
+    expect((await sql`select count(*)::int c from arts.vehicles where id = ${vid}`)[0].c).toBe(0);
+  });
+
+  it('forgetting a customer removes their details and cancels upcoming visits', async () => {
+    const a = await request({ customer_notes: 'Call my cell' });
+    const [{ customer_id: cid }] = await sql`select customer_id from arts.bookings where id = ${a.id}`;
+    expect((await call('forget', { customer_id: cid })).body).toMatchObject({ ok: true, cancelled_upcoming: 1 });
+    const [c] = await sql`select name, email, phone, email_opt_out from arts.customers where id = ${cid}`;
+    expect(c).toEqual({ name: 'Removed customer', email: null, phone: null, email_opt_out: true });
+    const [b] = await sql`select status, customer_notes from arts.bookings where id = ${a.id}`;
+    expect(b).toEqual({ status: 'cancelled', customer_notes: '' });
+    const [log] = await sql`select before, after from arts.audit_log where action = 'customer.forget'`;
+    expect(log.before).toBeNull();
+    expect(JSON.stringify(log.after)).not.toMatch(/@/);
+  });
+});
+
 describe('Export', () => {
   it('round-trips: every row and field comes back out', async () => {
     await request({ customer_notes: 'Line one, "quoted"\nline two' });

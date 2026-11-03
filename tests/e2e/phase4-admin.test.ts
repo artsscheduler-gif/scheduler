@@ -80,6 +80,20 @@ describe.skipIf(!up)('Phase 4: admin console', () => {
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Dismiss' }).click();
     await page.unroute('**/api/admin/resend');
+
+    // Find a booking by name from any date, and open it.
+    await page.goto(`${BASE}/admin`);
+    await page.getByLabel('Find a booking').fill('Jordan');
+    await page.locator('.search-results button', { hasText: 'Jordan Queue' }).first().click();
+    await page.getByRole('dialog', { name: 'Jordan Queue' }).waitFor();
+    await page.keyboard.press('Escape');
+
+    // The print view lists the day.
+    await page.emulateMedia({ media: 'print' });
+    expect(await page.locator('.print-day').isVisible()).toBe(true);
+    expect(await page.locator('.print-day').innerText()).toContain('Jordan Queue');
+    expect(await page.locator('.queue').isVisible()).toBe(false);
+    await page.emulateMedia({ media: 'screen' });
     const [b] = await sql`select status from arts.bookings`;
     expect(b.status).toBe('confirmed');
 
