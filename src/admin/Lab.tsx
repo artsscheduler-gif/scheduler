@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { adminPost } from './api';
 import { must, todayIn, useQuery, useSettings } from './shared';
-import { Message } from './Outbox';
+import { Message, deliveredNote } from './Outbox';
 import { DayView } from './DayView';
 import { addDays } from '../../shared/time';
 
@@ -11,7 +11,7 @@ import { addDays } from '../../shared/time';
 // The customer phone is a pop-up, not an iframe, because the site's headers
 // forbid framing (and should keep doing so in production).
 
-interface Row { id: string; kind: string | null; to_email: string; subject: string; sim_date: string | null; created_at: string }
+interface Row { id: string; kind: string | null; to_email: string; subject: string; sim_date: string | null; created_at: string; delivered: string | null }
 
 const SINCE_KEY = 'arts.lab.since';
 const PHONE = 'arts-customer-phone';
@@ -68,7 +68,7 @@ export function Lab() {
 
   useEffect(() => {
     let live = true;
-    const load = () => supabase.from('email_outbox').select('id, kind, to_email, subject, sim_date, created_at')
+    const load = () => supabase.from('email_outbox').select('id, kind, to_email, subject, sim_date, created_at, delivered')
       .gte('created_at', since).order('created_at').limit(200)
       .then(({ data }) => { if (live && data) setRows(data as Row[]); });
     load();
@@ -134,6 +134,7 @@ export function Lab() {
                   <span className="lab-badge">{LABEL[who(r.to_email)]}</span>
                   <strong>{r.subject}</strong>
                   <span className="muted small">{r.sim_date ? `simulated ${r.sim_date}` : at(r.created_at)} · {r.to_email}</span>
+                  {r.delivered && <span className={`small ${r.delivered.startsWith('sent:') ? 'ok-text' : 'error'}`}>{deliveredNote(r.delivered)}</span>}
                 </button>
                 {open === r.id && (
                   <div className="lab-open">

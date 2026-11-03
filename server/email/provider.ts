@@ -78,9 +78,11 @@ export class StubEmailProvider implements EmailProvider {
 }
 
 // Staging: stores each message in arts.email_outbox for the admin Outbox tab.
-// Never delivers anything.
+// Delivers nothing, except a [TEST] copy to addresses on EMAIL_DELIVER_TO
+// (sent from Resend's shared test sender, so no domain setup is needed).
 export class CaptureEmailProvider implements EmailProvider {
   name = 'capture';
+  constructor(private deliver: { to: string[]; from: string; via: EmailProvider | null } = { to: [], from: '', via: null }) {}
 
   async send(msg: EmailMessage): Promise<SendResult> {
     const { data, error } = await db().from('email_outbox').insert({
@@ -93,6 +95,12 @@ export class CaptureEmailProvider implements EmailProvider {
       attachments: msg.attachments?.map((a) => a.filename) ?? [],
     }).select('id').single();
     if (error) throw new Error(`capture: ${error.message}`);
+    if (this.deliver.via && this.deliver.to.includes(msg.to.toLowerCase())) {
+      // Failure here is recorded on the outbox row, never retried: the capture already succeeded.
+      const delivered = await this.deliver.via.send({ ...msg, from: this.deliver.from, subject: `[TEST] ${msg.subject}` })
+        .then((r) => `sent:${r.id}`, (e: Error) => `failed:${e.message.slice(0, 200)}`);
+      await db().from('email_outbox').update({ delivered }).eq('id', data.id);
+    }
     return { id: data.id, costCents: 0 };
   }
 
@@ -106,7 +114,9 @@ let provider: EmailProvider | null = null;
 export function emailProvider(): EmailProvider {
   if (!provider) {
     provider = env.emailProvider === 'resend' && env.resendKey ? new ResendProvider(env.resendKey)
-      : env.emailProvider === 'capture' ? new CaptureEmailProvider()
+      : env.emailProvider === 'capture' ? new CaptureEmailProvider({
+        to: env.deliverTo, from: env.deliverFrom, via: env.resendKey ? new ResendProvider(env.resendKey) : null,
+      })
       : new StubEmailProvider();
   }
   return provider;

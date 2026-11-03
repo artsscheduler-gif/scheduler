@@ -57,6 +57,21 @@ describe('capture provider', () => {
     const [{ n }] = await sql`select count(*)::int n from arts.email_log l join arts.email_outbox o on o.id::text = l.provider_id`;
     expect(n).toBe(2);
   });
+  it('delivers a [TEST] copy only to allowlisted addresses', async () => {
+    const sent: { to: string; from: string; subject: string }[] = [];
+    const via = { name: 'fake', ping: async () => true, send: async (m: any) => { sent.push(m); return { id: 're_1', costCents: 0 }; } };
+    setEmailProvider(new CaptureEmailProvider({ to: ['chris@example.com'], from: 'Test <onboarding@resend.dev>', via }));
+    const day = await weekdayAhead(4);
+    await postBook({
+      service_ids: [await serviceId('Oil change')], customer_notes: '', date: day, kind: 'wait', start_time: '09:00',
+      name: 'Real Person', email: 'real@example.com', phone: '6105553002',
+      vehicle: { year: 2012, make: 'Ford', model: 'F-150', notes: '' }, turnstile: 'x',
+    }, '10.9.0.2');
+    expect(sent.map((m) => m.to)).toEqual(['chris@example.com']);
+    expect(sent[0]).toMatchObject({ from: 'Test <onboarding@resend.dev>', subject: expect.stringMatching(/^\[TEST\] /) });
+    const rows = await sql`select to_email, delivered from arts.email_outbox order by to_email`;
+    expect(rows).toEqual([{ to_email: 'chris@example.com', delivered: 'sent:re_1' }, { to_email: 'real@example.com', delivered: null }]);
+  });
 });
 
 describe('simulator', () => {

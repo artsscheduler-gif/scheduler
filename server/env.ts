@@ -17,6 +17,9 @@ export const env = {
   // 'staging' turns on the Outbox and Simulator admin actions. Never set it in production.
   get staging() { return process.env.APP_ENV === 'staging'; },
   get resendKey() { return process.env.RESEND_API_KEY ?? ''; },
+  // Staging only: addresses that also get a real copy of captured email.
+  get deliverTo() { return (process.env.EMAIL_DELIVER_TO ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean); },
+  get deliverFrom() { return process.env.EMAIL_DELIVER_FROM || 'Art’s Servicenter TEST <onboarding@resend.dev>'; },
   get mailProvider() { return process.env.MAIL_PROVIDER ?? 'stub'; },
   get lobKey() { return process.env.LOB_API_KEY ?? ''; },
 };

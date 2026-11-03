@@ -3,7 +3,9 @@ import { supabase } from '../lib/supabase';
 import { adminPost } from './api';
 import { must, useQuery } from './shared';
 
-interface Row { id: string; kind: string | null; to_email: string; from_email: string; subject: string; attachments: string[]; sim_date: string | null; created_at: string }
+interface Row { id: string; kind: string | null; to_email: string; from_email: string; subject: string; attachments: string[]; sim_date: string | null; created_at: string; delivered: string | null }
+
+export const deliveredNote = (d: string | null) => !d ? '' : d.startsWith('sent:') ? 'Also delivered to the real inbox' : `Real-inbox copy failed: ${d.slice(7)}`;
 
 const t = (d: string) => new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
@@ -19,6 +21,7 @@ export function Message({ id }: { id: string }) {
         <dt>To</dt><dd>{m.to_email}</dd>
         <dt>Subject</dt><dd><strong>{m.subject}</strong></dd>
         <dt>Kind</dt><dd>{m.kind ?? '—'}{m.sim_date ? ` · simulated ${m.sim_date}` : ''}</dd>
+        {m.delivered && <><dt>Inbox</dt><dd>{deliveredNote(m.delivered)}</dd></>}
         {m.attachments.length > 0 && <><dt>Attached</dt><dd>{m.attachments.join(', ')}</dd></>}
       </dl>
       <div className="tabs" role="tablist">
@@ -32,7 +35,7 @@ export function Message({ id }: { id: string }) {
 }
 
 export function Outbox() {
-  const rows = useQuery(() => must(supabase.from('email_outbox').select('id, kind, to_email, from_email, subject, attachments, sim_date, created_at').order('created_at', { ascending: false }).limit(300)) as Promise<Row[]>);
+  const rows = useQuery(() => must(supabase.from('email_outbox').select('id, kind, to_email, from_email, subject, attachments, sim_date, created_at, delivered').order('created_at', { ascending: false }).limit(300)) as Promise<Row[]>);
   const [sel, setSel] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const list = (rows.data ?? []).filter((r) => !q || `${r.to_email} ${r.subject} ${r.kind}`.toLowerCase().includes(q.toLowerCase()));
