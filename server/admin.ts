@@ -340,6 +340,24 @@ async function closure(a: Admin, body: unknown): Promise<Result> {
   return { status: 200, body: data };
 }
 
+// Launch checklist (owner only): tick an item or edit its note.
+async function auditItem(a: Admin, body: unknown): Promise<Result> {
+  if (a.role !== 'owner') throw new HttpError(403, { error: 'owner_only' });
+  const b = V.obj(body, ['id', 'done', 'note']);
+  const id = V.uuid(b.id, 'id');
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (b.done !== undefined) {
+    const done = V.bool(b.done, 'done');
+    Object.assign(patch, { done, done_at: done ? patch.updated_at : null, done_by: done ? a.label : null });
+  }
+  if (b.note !== undefined) patch.note = V.str(b.note, 'note', { max: 2000, optional: true });
+  const { data: before } = await db().from('audit_items').select('done, note').eq('id', id).single();
+  if (!before) throw new HttpError(404, { error: 'not_found' });
+  const { data: after } = await db().from('audit_items').update(patch).eq('id', id).select('*').single();
+  await audit(a, 'checklist.update', 'audit_item', id, before, { done: after!.done, note: after!.note });
+  return { status: 200, body: after };
+}
+
 // Part-day blocks: one date, or every week on a weekday (1 = Monday).
 async function timeBlock(a: Admin, body: unknown): Promise<Result> {
   const b = V.obj(body, ['id', 'date', 'weekday', 'start_time', 'end_time', 'reason', 'delete']);
@@ -434,6 +452,7 @@ export async function adminAction(req: Req, action: string, body: unknown): Prom
     case 'level': return setLevel(a, body);
     case 'closure': return closure(a, body);
     case 'block': return timeBlock(a, body);
+    case 'audit-item': return auditItem(a, body);
     case 'rule': return reminderRule(a, body);
     case 'export': return exportCsv(a, body);
     case 'batch-approve': return approveBatch(a, body);

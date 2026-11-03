@@ -102,6 +102,20 @@ describe('Approval queue', () => {
   });
 });
 
+describe('Launch checklist', () => {
+  it('only the owner can tick items; ticks are audited', async () => {
+    const [item] = await sql`insert into arts.audit_items (key, section, title) values ('test-item', 'Test', 'Something to fix') returning id`;
+    await expect(call('audit-item', { id: item.id, done: true })).rejects.toMatchObject({ status: 403 });
+    const owner = (await adminToken('owner')).token;
+    const r = await adminAction(reqWith(owner), 'audit-item', { id: item.id, done: true, note: 'Done in staging' });
+    expect(r.body).toMatchObject({ done: true, note: 'Done in staging' });
+    expect((r.body as any).done_at).toBeTruthy();
+    const [log] = await sql`select action from arts.audit_log where entity = 'audit_item'`;
+    expect(log.action).toBe('checklist.update');
+    await sql`delete from arts.audit_items where key = 'test-item'`;
+  });
+});
+
 describe('Blocked time', () => {
   it('staff block and unblock part of a day; it is audited', async () => {
     const r = await call('block', { date: day, start_time: '13:00', end_time: '15:00', reason: 'Tech out' });

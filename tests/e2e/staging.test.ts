@@ -126,6 +126,17 @@ describe.skipIf(!staging)('Staging: simulator and outbox', () => {
     await confirmed.locator('.lab-links button').first().click();
     await phone.waitForURL(/\/manage\?t=/);
     await phone.getByRole('button', { name: 'Change date or time' }).waitFor();
+
+    // Owner-only launch checklist: tick an item and it saves.
+    await sql`insert into arts.audit_items (key, section, sort, title, priority, owner) values ('e2e-item', '9. E2E', 999, 'E2E checklist item', 'now', 'claude') on conflict (key) do update set done = false`;
+    await page.getByRole('link', { name: 'Checklist' }).click();
+    await page.getByRole('heading', { name: 'Launch checklist' }).waitFor();
+    const saved = page.waitForResponse((r) => r.url().includes('/api/admin/audit-item') && r.request().method() === 'POST');
+    await page.getByRole('checkbox', { name: 'E2E checklist item' }).check();
+    expect((await saved).status()).toBe(200);
+    expect((await sql`select done from arts.audit_items where key = 'e2e-item'`)[0].done).toBe(true);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/staging-4-checklist.png`, fullPage: true });
+    await sql`delete from arts.audit_items where key = 'e2e-item'`;
     expect(errors).toEqual([]);
   }, 120000);
 });

@@ -9,3 +9,4 @@ supabase/.branches
 import/private
 backups
 *.log
+/audit/
