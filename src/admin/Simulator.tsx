@@ -9,9 +9,9 @@ interface DayResult { date: string; emails: number; due_steps: number; emailed: 
 
 export function Simulator() {
   const st = useQuery(() => adminPost<Status>('sim-status', {}));
-  const [nCust, setNCust] = useState(100);
+  const [nCust, setNCust] = useState(25);
   const [nBook, setNBook] = useState(5);
-  const [days, setDays] = useState(28);
+  const [days, setDays] = useState(14);
   const [from, setFrom] = useState('');
   const [live, setLive] = useState(true);
   const [busy, setBusy] = useState('');

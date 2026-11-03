@@ -309,7 +309,10 @@ await check('Cleanup: simulated data and the test admin removed', async () => {
     const { error } = await service.auth.admin.deleteUser(adminId);
     if (error) throw error;
   }
-  return ['PASS', 'captured emails left in the Outbox for review'];
+  // Drop the emails this run captured so the Outbox and Test lab stay readable.
+  const { error: delErr, count } = await service.from('email_outbox').delete({ count: 'exact' }).gte('created_at', outboxSince);
+  if (delErr) throw delErr;
+  return ['PASS', `${count ?? 0} captured emails from this run removed`];
 });
 
 await browser.close();
