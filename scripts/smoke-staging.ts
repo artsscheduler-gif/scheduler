@@ -126,10 +126,10 @@ await check('4b. Turnstile widget loads on the booking form', async () => {
   await page.goto(URL_);
   await page.getByText(waitSvc!.name, { exact: true }).first().click();
   await page.getByRole('button', { name: 'Next' }).click();
-  await page.getByRole('radio', { name: /^Wait/ }).click();
-  await page.getByRole('button', { name: 'Next' }).click();
   await page.locator('button.day').first().click();
   await page.locator('button.time').first().click();
+  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByRole('radio', { name: /^Wait/ }).click();
   await page.getByRole('button', { name: 'Next' }).click();
   // The widget's iframe sits in a closed shadow root, so check the API loaded and the box rendered.
   await page.waitForFunction(() => !!(window as any).turnstile && (document.querySelector('.turnstile') as HTMLElement)?.offsetHeight > 0, null, { timeout: 20000 });
