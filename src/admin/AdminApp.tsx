@@ -30,7 +30,7 @@ export default function AdminApp() {
       {(session) => (
         <div className="admin">
           <header className="admin-top">
-            <strong className="admin-brand">Art’s Service Center</strong>
+            <strong className="admin-brand">Art’s Servicenter</strong>
             <nav aria-label="Admin">
               {NAV.map(([to, label]) => (
                 <NavLink key={to} to={to} end={to === '/admin'} className={({ isActive }) => (isActive ? 'on' : '')}>{label}</NavLink>

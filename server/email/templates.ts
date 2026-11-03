@@ -1,5 +1,6 @@
 import type { ShopSettings } from '../db.js';
 import { formatDate, formatTime } from '../../shared/time.js';
+import { env } from '../env.js';
 
 export function esc(s: unknown): string {
   return String(s ?? '')
@@ -24,8 +25,10 @@ interface LayoutOpts {
 // Table layout with inline styles: renders in Gmail and Outlook.
 export function layout(s: ShopSettings, o: LayoutOpts): { html: string; text: string } {
   const brand = /^#[0-9a-f]{6}$/i.test(s.brand_color) ? s.brand_color : '#2b3a4a';
-  const header = s.logo_url
-    ? `<img src="${esc(s.logo_url)}" alt="${esc(s.shop_name)}" height="40" style="display:block;height:40px;border:0">`
+  // A site-relative logo (e.g. /logo.png) needs the full URL in email.
+  const logo = s.logo_url ? new URL(s.logo_url, `${env.appUrl}/`).href : '';
+  const header = logo
+    ? `<img src="${esc(logo)}" alt="${esc(s.shop_name)}" height="48" style="display:block;height:48px;border:0">`
     : `<span style="font-size:20px;font-weight:bold;color:#ffffff;letter-spacing:0.3px">${esc(s.shop_name)}</span>`;
   const details = o.details?.length
     ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:16px 0;border-collapse:collapse;width:100%">${o.details
@@ -43,7 +46,9 @@ export function layout(s: ShopSettings, o: LayoutOpts): { html: string; text: st
 ${o.preheader ? `<div style="display:none;max-height:0;overflow:hidden">${esc(o.preheader)}</div>` : ''}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f1ed"><tr><td align="center" style="padding:24px 12px">
 <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:8px">
-<tr><td bgcolor="${brand}" style="padding:20px 28px;border-radius:8px 8px 0 0">${header}</td></tr>
+<tr>${logo
+  ? `<td bgcolor="#ffffff" style="padding:16px 28px;border-radius:8px 8px 0 0;border-bottom:4px solid ${brand}">${header}</td>`
+  : `<td bgcolor="${brand}" style="padding:20px 28px;border-radius:8px 8px 0 0">${header}</td>`}</tr>
 <tr><td style="padding:28px;color:#1d232a;font-size:16px;line-height:1.5">
 <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#1d232a">${esc(o.heading)}</h1>
 ${o.paragraphs.map((p) => `<p style="margin:0 0 14px">${p}</p>`).join('\n')}

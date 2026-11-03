@@ -152,7 +152,7 @@ export function AuthGate({ children }: { children: (session: Session) => ReactNo
   return (
     <main className="auth">
       <div className="auth-card">
-        <h1>Art’s Service Center · Admin</h1>
+        <h1>Art’s Servicenter · Admin</h1>
         {stage.kind === 'loading' && <p>Loading…</p>}
         {stage.kind === 'signin' && (
           <form onSubmit={onSignIn}>

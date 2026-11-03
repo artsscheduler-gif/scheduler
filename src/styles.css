@@ -97,7 +97,7 @@ code { font-family: var(--mono); font-size: 0.9em; word-break: break-all; }
 .pub-header { background: var(--card); color: var(--brand); position: sticky; top: 0; z-index: 5; border-bottom: 4px solid var(--accent); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06); }
 .pub-header-inner { max-width: 560px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .pub-name { font-weight: 800; font-style: italic; font-size: clamp(1rem, 4.6vw, 1.2rem); letter-spacing: -0.01em; white-space: nowrap; }
-.pub-logo { height: 44px; display: block; }
+.pub-logo { height: 52px; width: auto; display: block; }
 .pub-phone { color: var(--brand); font-weight: 700; text-decoration: none; white-space: nowrap; padding: 8px 0; }
 .pub-phone:hover { text-decoration: underline; }
 .progress { max-width: 560px; margin: 0 auto; padding: 0 16px 10px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
