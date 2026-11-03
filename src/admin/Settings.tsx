@@ -80,6 +80,8 @@ function SettingsSection({ title, fields, s, onSaved }: { title: string; fields:
     const patch: Record<string, unknown> = {};
     for (const fd of fields) {
       const raw = f.get(fd.k);
+      // A cleared number box is a mistake, not zero.
+      if (fd.t === 'int' && String(raw ?? '').trim() === '') return setMsg(`${fd.label} can’t be blank.`);
       const v = fd.t === 'bool' ? raw === 'on' : fd.t === 'int' ? Number(raw) : fd.t === 'time' ? String(raw).slice(0, 5) : String(raw ?? '');
       const cur = fd.t === 'time' ? String(s[fd.k]).slice(0, 5) : s[fd.k];
       if (v !== cur) patch[fd.k] = v;
@@ -251,7 +253,7 @@ function Closures() {
             <tr key={c.id}>
               <td>{formatDate(c.start_date, { month: 'short', day: 'numeric', year: 'numeric' })}{c.end_date !== c.start_date && ` – ${formatDate(c.end_date, { month: 'short', day: 'numeric', year: 'numeric' })}`}</td>
               <td>{c.reason}</td>
-              <td><button className="btn small danger" onClick={async () => { await adminPost('closure', { id: c.id, delete: true }); list.reload(); }}>Remove</button></td>
+              <td><button className="btn small danger" onClick={async () => { if (!confirm('Remove this closure? Customers will be able to book that day again.')) return; await adminPost('closure', { id: c.id, delete: true }); list.reload(); }}>Remove</button></td>
             </tr>
           ))}
         </tbody>
@@ -280,7 +282,7 @@ function TimeBlocks() {
         {list.data?.map((b) => (
           <li key={b.id}>
             <span>{blockLabel(b)}</span>
-            <button className="btn small danger" onClick={async () => { await adminPost('block', { id: b.id, delete: true }); list.reload(); }}>Remove</button>
+            <button className="btn small danger" onClick={async () => { if (!confirm(`Remove ${blockLabel(b)}?`)) return; await adminPost('block', { id: b.id, delete: true }); list.reload(); }}>Remove</button>
           </li>
         ))}
       </ul>

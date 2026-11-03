@@ -136,16 +136,22 @@ function BookingDetail({ b, s, onClose, onChanged }: { b: B; s: Settings; onClos
   const [violations, setViolations] = useState<string[] | null>(null);
   const [msg, setMsg] = useState('');
 
-  async function status(st: string) {
+  const [reopen, setReopen] = useState<string[] | null>(null);
+  async function status(st: string, override = false) {
     if (st === 'cancelled' && !confirm('Cancel this booking and email the customer?')) return;
-    const r = await adminPost('status', { booking_id: b.id, status: st });
-    if (r.ok) { onChanged(); onClose(); } else setMsg(r.error);
+    try {
+      const r = await adminPost('status', { booking_id: b.id, status: st, override });
+      if (r.ok) { onChanged(); onClose(); } else if (r.violations) setReopen(r.violations); else setMsg(r.error);
+    } catch (e) {
+      setMsg(String((e as Error).message));
+    }
   }
   async function move(override = false) {
     const r = await adminPost('move', { booking_id: b.id, ...slot, override });
     if (r.ok) { onChanged(); onClose(); } else if (r.violations) setViolations(r.violations); else setMsg(r.error);
   }
   async function undo() {
+    if (!confirm('Undo the auto-confirm and put this booking back in your queue?')) return;
     const r = await adminPost('decide', { booking_id: b.id, action: 'undo' });
     if (r.ok) { onChanged(); onClose(); } else setMsg(r.error === 'undo_window_closed' ? 'The undo window has closed.' : r.error);
   }
@@ -171,6 +177,9 @@ function BookingDetail({ b, s, onClose, onChanged }: { b: B; s: Settings; onClos
         {canUndo && <button className="btn" onClick={undo}>Undo auto-confirm</button>}
         <button className="btn" onClick={async () => { await adminPost('resend', { booking_id: b.id }); setMsg('Email re-sent.'); }}>Resend email</button>
       </div>
+      {reopen && (
+        <OverrideConfirm violations={reopen} verb="Reopen anyway" onCancel={() => setReopen(null)} onConfirm={() => status('confirmed', true)} />
+      )}
       {['confirmed', 'requested'].includes(b.status) && (
         <div className="move">
           <h3>Move</h3>
@@ -199,7 +208,6 @@ export function blockLabel(b: Block) {
   return `${when}, ${formatTime(b.start_time)}–${formatTime(b.end_time)}${b.reason ? ` · ${b.reason}` : ''}`;
 }
 
-// Block part of a day from online booking, once or every week.
 // Total minutes covered by possibly overlapping [start, end) spans.
 function mergedMinutes(spans: number[][]) {
   let total = 0;
@@ -212,6 +220,7 @@ function mergedMinutes(spans: number[][]) {
   return total;
 }
 
+// Block part of a day from online booking, once or every week.
 export function BlockForm({ date, onDone }: { date: string; onDone: () => void }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -249,13 +258,14 @@ export function BlockForm({ date, onDone }: { date: string; onDone: () => void }
   );
 }
 
-export function DayView() {
+export function DayView({ refresh }: { refresh?: unknown } = {}) {
   const { data: s } = useSettings();
   const [params, setParams] = useSearchParams();
   const [date, setDate] = useState<string>(params.get('date') ?? '');
   const [detail, setDetail] = useState<B | null>(null);
   const [newAt, setNewAt] = useState<{ date: string; kind: 'wait' | 'dropoff'; start_time: string } | null>(null);
-  const [dragMove, setDragMove] = useState<{ b: B; slot: any; violations: string[] } | null>(null);
+  // A drop asks first: moving emails the customer. violations is set once the rules object.
+  const [dragMove, setDragMove] = useState<{ b: B; slot: any; violations: string[] | null; err?: string } | null>(null);
   const [showCancelled, setShowCancelled] = useState(false);
   const [blocking, setBlocking] = useState(false);
   const undoId = params.get('undo');
@@ -285,6 +295,16 @@ export function DayView() {
     if (!date) return [] as Block[];
     return (await must(supabase.from('time_blocks').select('*').or(`date.eq.${date},weekday.eq.${isoDow(date)}`).order('start_time'))) as Block[];
   }, [date]);
+
+  // Stay current on a shop iPad left open: refresh every minute, when the tab
+  // comes back into view, and when the Test lab sees a new email.
+  useEffect(() => {
+    const onVisible = () => document.visibilityState === 'visible' && reloadAll();
+    const timer = setInterval(onVisible, 60_000);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVisible); };
+  }, []);
+  useEffect(() => { if (refresh !== undefined) reloadAll(); }, [refresh]);
 
   function reloadAll() {
     requests.reload();
@@ -333,23 +353,33 @@ export function DayView() {
     return `${String(Math.floor(snapped / 60)).padStart(2, '0')}:${String(snapped % 60).padStart(2, '0')}`;
   }
 
-  async function dropMove(b: B, slot: { date: string; kind: 'wait' | 'dropoff'; start_time: string | null }, override = false) {
-    const r = await adminPost('move', { booking_id: b.id, ...slot, start_time: slot.start_time ?? undefined, override });
-    if (r.ok) { setDragMove(null); reloadAll(); } else if (r.violations) setDragMove({ b, slot, violations: r.violations });
+  async function dropMove(b: B, slot: { date: string; kind: 'wait' | 'dropoff'; start_time: string | null }, notify: boolean, override = false) {
+    try {
+      const r = await adminPost('move', { booking_id: b.id, ...slot, start_time: slot.start_time ?? undefined, override, notify });
+      if (r.ok) { setDragMove(null); reloadAll(); } else if (r.violations) setDragMove({ b, slot, violations: r.violations, notify } as any);
+      else setDragMove({ b, slot, violations: null, err: r.error ?? 'Could not move' });
+    } catch (e) {
+      setDragMove({ b, slot, violations: null, err: String((e as Error).message) });
+    }
+  }
+
+  function askMove(b: B, slot: { date: string; kind: 'wait' | 'dropoff'; start_time: string | null }) {
+    if (b.kind === slot.kind && (b.start_time ?? '').slice(0, 5) === (slot.start_time ?? '')) return; // dropped where it was
+    setDragMove({ b, slot, violations: null });
   }
 
   function onLaneDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault();
     const id = e.dataTransfer.getData('text/booking');
     const b = day.data?.find((x) => x.id === id);
-    if (b) dropMove(b, { date, kind: 'wait', start_time: minuteAt(e) });
+    if (b) askMove(b, { date, kind: 'wait', start_time: minuteAt(e) });
   }
 
   function onDropoffDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault();
     const id = e.dataTransfer.getData('text/booking');
     const b = day.data?.find((x) => x.id === id);
-    if (b && b.kind !== 'dropoff') dropMove(b, { date, kind: 'dropoff', start_time: null });
+    if (b && b.kind !== 'dropoff') askMove(b, { date, kind: 'dropoff', start_time: null });
   }
 
   const undoTarget = undoId ? undoable.data?.find((b) => b.id === undoId) : null;
@@ -382,7 +412,7 @@ export function DayView() {
               <div key={b.id} className="row">
                 <span><strong>{b.customers.name}</strong> · {when(s, b)} · {svcNames(b)}</span>
                 <span className="muted small">until {new Date(b.undo_until!).toLocaleTimeString('en-US', { timeZone: s.timezone, hour: 'numeric', minute: '2-digit' })}</span>
-                <button className="btn small" onClick={async () => { await adminPost('decide', { booking_id: b.id, action: 'undo' }); reloadAll(); }}>Undo</button>
+                <button className="btn small" onClick={async () => { if (!confirm(`Undo the auto-confirmed booking for ${b.customers.name} and put it back in your queue?`)) return; await adminPost('decide', { booking_id: b.id, action: 'undo' }); reloadAll(); }}>Undo</button>
               </div>
             ))}
           </details>
@@ -411,7 +441,7 @@ export function DayView() {
             {blocks.data.map((bl) => (
               <li key={bl.id}>
                 <span>Blocked: {blockLabel(bl)}</span>
-                <button className="btn small" onClick={async () => { await adminPost('block', { id: bl.id, delete: true }); blocks.reload(); }}>
+                <button className="btn small" onClick={async () => { if (!confirm(`Remove ${bl.weekday ? 'this weekly block (every week)' : 'this block'}? Customers will be able to book that time again.`)) return; await adminPost('block', { id: bl.id, delete: true }); blocks.reload(); }}>
                   {bl.weekday ? 'Remove (every week)' : 'Remove'}
                 </button>
               </li>
@@ -500,8 +530,17 @@ export function DayView() {
       )}
       {dragMove && (
         <Modal title="Move booking" onClose={() => setDragMove(null)}>
-          <p><strong>{dragMove.b.customers.name}</strong> → {when(s, { ...dragMove.slot })}</p>
-          <OverrideConfirm violations={dragMove.violations} verb="Move anyway" onCancel={() => setDragMove(null)} onConfirm={() => dropMove(dragMove.b, dragMove.slot, true)} />
+          <p><strong>{dragMove.b.customers.name}</strong>: {when(s, dragMove.b)} → {when(s, { ...dragMove.slot })}</p>
+          {dragMove.violations ? (
+            <OverrideConfirm violations={dragMove.violations} verb="Move anyway" onCancel={() => setDragMove(null)} onConfirm={() => dropMove(dragMove.b, dragMove.slot, (dragMove as any).notify ?? true, true)} />
+          ) : (
+            <div className="row wrap">
+              <button className="btn primary" onClick={() => dropMove(dragMove.b, dragMove.slot, true)}>Move and email customer</button>
+              <button className="btn" onClick={() => dropMove(dragMove.b, dragMove.slot, false)}>Move, don’t email</button>
+              <button className="btn" onClick={() => setDragMove(null)}>Cancel</button>
+            </div>
+          )}
+          {dragMove.err && <p className="error">{dragMove.err}</p>}
         </Modal>
       )}
     </div>

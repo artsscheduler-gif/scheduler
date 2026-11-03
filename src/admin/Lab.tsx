@@ -69,8 +69,8 @@ export function Lab() {
   useEffect(() => {
     let live = true;
     const load = () => supabase.from('email_outbox').select('id, kind, to_email, subject, sim_date, created_at, delivered')
-      .gte('created_at', since).order('created_at').limit(200)
-      .then(({ data }) => { if (live && data) setRows(data as Row[]); });
+      .gte('created_at', since).order('created_at', { ascending: false }).limit(200)
+      .then(({ data }) => { if (live && data) setRows((data as Row[]).reverse()); });
     load();
     const timer = setInterval(load, 3000);
     return () => { live = false; clearInterval(timer); };
@@ -157,8 +157,8 @@ export function Lab() {
 
         <section className="lab-chris" aria-label="Chris's view">
           <h2 className="lab-chris-title">Chris’s view</h2>
-          {/* Remount when a new email arrives so the queue and day pick up the change. */}
-          <DayView key={rows.length} />
+          {/* Refresh (without losing open forms) whenever a new email arrives. */}
+          <DayView refresh={rows.at(-1)?.id} />
         </section>
       </div>
     </div>

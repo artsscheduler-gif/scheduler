@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
 import { sql, resetData, serviceId, weekdayAhead, adminToken, reqWith } from './helpers';
 import { adminAction } from '../../server/admin';
 import { postBook } from '../../server/public';
@@ -99,6 +99,43 @@ describe('Approval queue', () => {
     expect(await tick(s, later)).toMatchObject({ escalated_staff: 0, escalated_owner: 0 });
     const [b] = await sql`select status from arts.bookings`;
     expect(b.status).toBe('requested'); // holds never silently expire
+  });
+});
+
+describe('Status changes', () => {
+  it('reopening a cancelled booking re-checks the slot; odd transitions are refused', async () => {
+    await sql`update arts.shop_settings set waiter_lanes = 1`;
+    const a = await request();
+    await call('decide', { booking_id: a.id, action: 'approve' });
+    await call('status', { booking_id: a.id, status: 'cancelled', notify: false });
+    const b = await request(); // takes the same 09:00 waiter lane
+    const r = await call('status', { booking_id: a.id, status: 'confirmed' });
+    expect(r).toMatchObject({ status: 409, body: { violations: expect.arrayContaining(['waiter_lanes']) } });
+    expect((await call('status', { booking_id: a.id, status: 'confirmed', override: true })).status).toBe(200);
+    expect((await call('status', { booking_id: b.id, status: 'confirmed' })).body).toMatchObject({ error: 'invalid_transition' });
+  });
+});
+
+describe('Settings safety', () => {
+  it('rejects values that would lock people out or break scheduling', async () => {
+    await expect(call('settings', { session_timeout_hours: 0 })).rejects.toMatchObject({ field: 'session_timeout_hours' });
+    await expect(call('settings', { timezone: 'America/New_Yrok' })).rejects.toMatchObject({ field: 'timezone' });
+    await expect(call('settings', { staff_notify_email: 'chris@' })).rejects.toThrow(/valid email/);
+    await expect(call('settings', { waiter_lanes: 9 })).rejects.toThrow(/more than total lanes/);
+    await expect(call('settings', { dropoff_window_end: '07:00' })).rejects.toThrow(/after the earliest/);
+    expect((await call('settings', { session_timeout_hours: 8, timezone: 'America/Chicago' })).status).toBe(200);
+  });
+
+  it('the server ends admin sessions older than the timeout setting', async () => {
+    await sql`update arts.shop_settings set session_timeout_hours = 1`;
+    expect((await call('check', { date: day, kind: 'wait', start_time: '09:00', service_ids: [oil] })).status).toBe(200);
+    const now = Date.now();
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(now + 2 * 3600_000);
+    try {
+      await expect(call('check', { date: day, kind: 'wait', start_time: '09:00', service_ids: [oil] })).rejects.toMatchObject({ status: 401 });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

@@ -33,16 +33,26 @@ export function BookingForm({ initial, onDone }: { initial?: { date: string; kin
     return () => clearTimeout(t);
   }, [q]);
 
+  const [busy, setBusy] = useState(false);
   async function send(body: Record<string, unknown>, override = false) {
-    const r = await adminPost('create', { ...body, override });
-    if (r.ok) {
-      setMsg(r.violations_overridden?.length ? 'Booked (rule overridden).' : 'Booked.');
-      setViolations(null);
-      onDone?.();
-    } else if (r.violations) {
-      setViolations(r.violations);
-      setPending(body);
-    } else setMsg(r.error ?? 'Could not book');
+    if (busy) return; // a double click must not book twice
+    setBusy(true);
+    try {
+      const r = await adminPost('create', { ...body, override });
+      if (r.ok) {
+        setMsg(r.violations_overridden?.length ? 'Booked (rule overridden).' : 'Booked.');
+        setViolations(null);
+        setServiceIds([]); // Book stays disabled until a new booking is set up
+        onDone?.();
+      } else if (r.violations) {
+        setViolations(r.violations);
+        setPending(body);
+      } else setMsg(r.error ?? 'Could not book');
+    } catch (e) {
+      setMsg(String((e as Error).message));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -150,7 +160,7 @@ export function BookingForm({ initial, onDone }: { initial?: { date: string; kin
       {violations && pending ? (
         <OverrideConfirm violations={violations} onCancel={() => setViolations(null)} onConfirm={() => send(pending, true)} />
       ) : (
-        <button className="btn primary" disabled={serviceIds.length === 0}>Book</button>
+        <button className="btn primary" disabled={serviceIds.length === 0 || busy}>{busy ? 'Booking…' : 'Book'}</button>
       )}
       {msg && <p className="muted" role="status">{msg}</p>}
     </form>

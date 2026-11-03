@@ -34,7 +34,15 @@ export async function requireAdmin(req: Req): Promise<Admin> {
   if (error || !data.user) throw new HttpError(401, { error: 'unauthenticated' });
   const role = data.user.app_metadata?.role;
   if (role !== 'owner' && role !== 'staff') throw new HttpError(403, { error: 'forbidden' });
-  if (decodeJwt(token).aal !== 'aal2') throw new HttpError(403, { error: 'mfa_required' });
+  const claims = decodeJwt(token);
+  if (claims.aal !== 'aal2') throw new HttpError(403, { error: 'mfa_required' });
+  // Server-side session limit: the free Supabase plan can't time-box sessions,
+  // so refuse tokens whose sign-in (earliest amr entry) is older than the setting.
+  const signedInAt = Math.min(...((claims.amr ?? []) as { timestamp?: number }[]).map((x) => x.timestamp ?? Infinity));
+  if (Number.isFinite(signedInAt)) {
+    const s = await getSettings();
+    if (Date.now() / 1000 - signedInAt > s.session_timeout_hours * 3600) throw new HttpError(401, { error: 'session_expired' });
+  }
   const email = data.user.email ?? '';
   return { id: data.user.id, email, role, label: (data.user.user_metadata?.name as string) || email };
 }
@@ -147,10 +155,12 @@ async function move(a: Admin, body: unknown): Promise<Result> {
 }
 
 async function setStatus(a: Admin, body: unknown): Promise<Result> {
-  const b = V.obj(body, ['booking_id', 'status', 'notify']);
+  const b = V.obj(body, ['booking_id', 'status', 'notify', 'override']);
   const id = V.uuid(b.booking_id, 'booking_id');
   if (!['completed', 'cancelled', 'no_show', 'confirmed'].includes(b.status as string)) throw new V.ValidationError('status', 'invalid');
-  const r = await rpc<{ ok: boolean; previous?: string }>('set_booking_status', { p_booking: id, p_status: b.status, p_actor: actor(a) });
+  const r = await rpc<{ ok: boolean; previous?: string; violations?: string[] }>('set_booking_status', {
+    p_booking: id, p_status: b.status, p_actor: actor(a), p_override: b.override === true,
+  });
   if (!r.ok) return { status: 409, body: r };
   if (b.status === 'cancelled' && b.notify !== false) {
     const s = await getSettings();
@@ -251,6 +261,28 @@ const SETTINGS_FIELDS: Record<string, 'int' | 'bool' | 'text' | 'time' | 'hours'
   session_timeout_hours: 'int', brand_color: 'text', logo_url: 'text',
 };
 
+// Sensible bounds, so one bad value can't lock everyone out (timeout 0) or
+// break scheduling. Anything not listed falls back to 0..100000.
+const INT_RANGE: Record<string, [number, number]> = {
+  total_lanes: [1, 20], waiter_lanes: [0, 20], slot_step_minutes: [5, 120], buffer_minutes: [0, 120],
+  dropoff_share_pct: [0, 100], floor_days: [0, 60], max_days_ahead: [1, 365], notes_max_length: [50, 2000],
+  request_turnaround_business_hours: [1, 72], escalate_staff_business_hours: [1, 72], escalate_owner_business_days: [1, 30],
+  ladder_step2_approvals: [1, 1000], ladder_step3_weeks: [1, 52], undo_window_hours: [0, 72], change_cutoff_hours: [0, 336],
+  max_future_bookings: [1, 50], rate_limit_ip_per_hour: [1, 1000], rate_limit_contact_per_day: [1, 100],
+  appointment_reminder_hours: [1, 168], reminder_max_overdue_days: [0, 3650], postcard_cost_cents: [0, 1000],
+  alert_send_failure_pct: [1, 100], session_timeout_hours: [1, 72],
+};
+const EMAIL_FIELDS = new Set(['from_email', 'staff_notify_email', 'owner_alert_email']);
+
+function validTimezone(tz: string) {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function parseHours(v: unknown) {
   const o = V.obj(v, ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'], 'hours');
   const out: Record<string, unknown> = {};
@@ -271,7 +303,8 @@ async function updateSettings(a: Admin, body: unknown): Promise<Result> {
   const patch: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(b)) {
     const t = SETTINGS_FIELDS[k];
-    if (t === 'int') patch[k] = V.int(v, k, 0, 100000);
+    if (t === 'int') patch[k] = V.int(v, k, ...(INT_RANGE[k] ?? [0, 100000]));
+    else if (EMAIL_FIELDS.has(k)) patch[k] = V.email(v, k);
     else if (t === 'bool') patch[k] = V.bool(v, k);
     else if (t === 'time') patch[k] = V.time(v, k);
     else if (t === 'hours') patch[k] = parseHours(v);
@@ -279,7 +312,13 @@ async function updateSettings(a: Admin, body: unknown): Promise<Result> {
     else patch[k] = V.str(v, k, { max: 200, optional: k === 'logo_url' });
   }
   if ('brand_color' in patch && !/^#[0-9a-f]{6}$/i.test(String(patch.brand_color))) throw new V.ValidationError('brand_color', 'must be #rrggbb');
+  if ('timezone' in patch && !validTimezone(String(patch.timezone))) throw new V.ValidationError('timezone', 'must be a timezone like America/New_York');
   const { data: before } = await db().from('shop_settings').select('*').eq('id', 1).single();
+  // Rules between fields, checked against the values as they'll be saved.
+  const m = { ...(before as any), ...patch };
+  if (m.waiter_lanes > m.total_lanes) throw new V.ValidationError('waiter_lanes', 'can’t be more than total lanes');
+  if (String(m.dropoff_window_end).slice(0, 5) <= String(m.dropoff_window_start).slice(0, 5)) throw new V.ValidationError('dropoff_window_end', 'must be after the earliest drop-off time');
+  if (m.floor_days > m.max_days_ahead) throw new V.ValidationError('floor_days', 'can’t be later than the latest online booking day');
   const { data: after, error } = await db().from('shop_settings').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', 1).select('*').single();
   if (error) throw new V.ValidationError('settings', error.message);
   const changedBefore = Object.fromEntries(Object.keys(patch).map((k) => [k, (before as any)[k]]));

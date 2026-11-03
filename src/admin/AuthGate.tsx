@@ -52,6 +52,9 @@ function writeLoginAt(v: number | null) {
   }
 }
 
+// Session length from Settings, read at sign-in; 12 hours until then.
+let timeoutMs = 12 * 3600_000;
+
 export async function signOut() {
   writeLoginAt(null);
   writeEnroll(null);
@@ -78,6 +81,7 @@ export function AuthGate({ children }: { children: (session: Session) => ReactNo
     if (aal.data?.currentLevel === 'aal2') {
       const { data: s } = await supabase.from('shop_settings').select('session_timeout_hours').eq('id', 1).single();
       const limitMs = (s?.session_timeout_hours ?? 12) * 3600_000;
+      timeoutMs = limitMs;
       const at = readLoginAt();
       if (!at || Date.now() - at > limitMs) {
         await signOut();
@@ -111,7 +115,7 @@ export function AuthGate({ children }: { children: (session: Session) => ReactNo
     });
     const timer = setInterval(() => {
       const at = readLoginAt();
-      if (at && Date.now() - at > 12 * 3600_000) signOut();
+      if (at && Date.now() - at > timeoutMs) signOut();
     }, 60_000);
     return () => {
       data.subscription.unsubscribe();
