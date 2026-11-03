@@ -75,3 +75,51 @@ The parts that don't need accounts were done now so the next run is short:
    - **Auth settings:** set through the Management API (`PATCH /v1/projects/{ref}/config/auth`): sign-ups off, TOTP on, 12h session time-box, site URL and redirect set to the staging URL. Also add `arts` to the exposed schemas (`PATCH /v1/projects/{ref}/postgrest`). The session time-box needs a paid Supabase plan; if the API refuses it, it becomes a manual item, and the admin UI still enforces 12 hours.
    - **Seed:** `supabase db push --include-seed` applies migrations plus `supabase/seed.sql` (placeholder services and placeholder shop phone/address).
    - **Hourly escalation tick:** pg_cron needs `STAGING_URL` and `CRON_SECRET`, so it's scheduled after Phase 3.
+
+---
+
+# Run 2: 2026-11-02 (evening)
+
+`.env.staging.local` now has the six Supabase values and `OWNER_ADMIN_EMAIL`. Vercel, Turnstile and Lob are still blank.
+
+## Fixes to the env file
+
+| Line | Was | Now | Why |
+|---|---|---|---|
+| `STAFF_ADMIN_EMAIL` | `Chris` (a name, not an email) | blank | An invite needs an address. Chris's account is skipped until his email is filled in. |
+| `STAGING_DOMAIN` | instruction text | blank | The domain isn't attached yet, so staging will use the `*.vercel.app` URL. |
+
+A file named `arts_tokens and passwords.rtf` sits in the repo folder and isn't covered by `.gitignore`. I didn't open it. I added `*.rtf` to `.git/info/exclude` (local only, never pushed) so it can't be committed by accident.
+
+## Phase 1: Supabase (project `fdblmu…`, ca-central-1, org `ivkdzz…`)
+
+| Step | Result |
+|---|---|
+| Link | PASS: `supabase link` using the project's own `SUPABASE_ACCESS_TOKEN` (`sbp_fc…`). Jake's personal CLI login untouched. |
+| Migrations | PASS: all 4 applied to an empty database (`20261029000001` → `20261102000001`). |
+| Seed | PASS: `supabase/seed.sql` applied with `db push --include-seed`. |
+| RLS forced on every table | PASS: all 16 `arts` tables show `relrowsecurity` and `relforcerowsecurity` true (checked through the Management API SQL endpoint). |
+| Anon key probe | PASS: the publishable key (`sb_pub…`) can't read or write any of 16 tables or call any of 19 functions. 0 failures. |
+| Sign-ups off | PASS: `disable_signup` true. |
+| TOTP | PASS: enroll and verify both on. |
+| 12h session time-box | **BLOCKED**: API answered "User sessions can only be configured on Pro Plans and up." Manual item. The admin UI enforces 12 hours on its own. |
+| Expose `arts` schema | PASS: PostgREST `db_schema` now `public,graphql_public,arts`. |
+| Site URL / redirect list | **DEFERRED** to after Phase 2: still `http://localhost:3000`; set it to `STAGING_URL` once there's a deploy. |
+| Owner admin | PASS: `artssc…` created with `app_metadata.role = owner`, email pre-confirmed, **no email sent**. No password yet; the sign-in link is generated after Phase 2, because it has to point at the staging URL. |
+| Staff admin | **SKIPPED**: no email address for Chris. |
+
+## Phases 2–6: blocked
+
+| Phase | Blocked on |
+|---|---|
+| 2 Vercel | `VERCEL_TOKEN`, `VERCEL_SCOPE`, `VERCEL_PROJECT` |
+| 3 Domain | Phase 2 deploy (and `STAGING_DOMAIN`) |
+| 4 Turnstile | both Turnstile keys plus a deploy |
+| 5 Lob | `LOB_API_KEY` (blank → stub provider) |
+| 6 Smoke test on staging | `STAGING_URL` (needs Phase 2) |
+
+## Decisions (run 2)
+
+8. **Owner created with `createUser`, not an invite.** An invite link expires and would point at `localhost` until there's a staging URL. Creating the account now and generating a link later sends no email and avoids a dead link.
+9. **New-style Supabase keys** (`sb_publishable_…`, `sb_secret_…`) are used as-is. supabase-js accepts them. User sessions are still JWTs, so the server's `aal2` check is unchanged. `check-bundle-secrets` already flags `sb_secret_`.
+10. **Secrets pasted into the chat.** Jake pasted the env file contents, including the access token, secret key and DB password, into the Claude conversation. Recommended rotating all three after staging is up (manual item).
