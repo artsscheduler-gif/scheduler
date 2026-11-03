@@ -3,6 +3,7 @@ export interface PublicConfig {
   shop_name: string;
   shop_phone: string;
   shop_address: string;
+  hours: Record<string, { open: string; close: string } | null>;
   brand_color: string;
   logo_url: string;
   dropoff_window: [string, string];

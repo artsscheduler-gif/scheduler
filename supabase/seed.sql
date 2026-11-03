@@ -9,4 +9,5 @@ insert into arts.services (name, description, duration_minutes, wait_eligible, d
   ('Something else', 'Tell us what''s going on and we''ll take a look', 60, false, null, null, null, 6, '{}');
 
 -- Local-only placeholder contact details (real values are an open item).
-update arts.shop_settings set shop_phone = '(555) 010-0199', shop_address = '123 Example St, Anytown, PA 18000', staff_notify_email = 'chris@example.com';
+update arts.shop_settings set shop_phone = '(555) 010-0199', shop_address = '123 Example St, Anytown, PA 18000', staff_notify_email = 'chris@example.com',
+  brand_color = '#2b3990', slot_step_minutes = 30;

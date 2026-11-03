@@ -58,9 +58,13 @@ describe.skipIf(!up)('Phase 3: public booking on a 375px phone', () => {
     await page.getByLabel('Name').fill('Robin Example');
     await page.getByLabel('Phone').fill('610-555-0142');
     await page.getByLabel('Email').fill(`robin-${Date.now()}@example.com`);
-    await page.getByLabel('Year').fill('2016');
-    await page.getByLabel('Make').fill('Toyota');
-    await page.getByLabel('Model').fill('Corolla');
+    // Model lists come from NHTSA vPIC; answer locally so the test doesn't depend on it.
+    await page.route('https://vpic.nhtsa.dot.gov/**', (r) => r.fulfill({
+      json: { Results: r.request().url().includes('/vehicletype/car') ? [{ Model_Name: 'Corolla' }, { Model_Name: 'Camry' }] : [{ Model_Name: 'RAV4' }] },
+    }));
+    await page.getByLabel('Year').selectOption('2016');
+    await page.getByLabel('Make').selectOption('Toyota');
+    await page.getByLabel('Model').selectOption('Corolla');
     // Turnstile test site key passes automatically.
     await page.getByRole('button', { name: 'Book it' }).waitFor();
     await page.waitForFunction(() => !(document.querySelector('button.primary') as HTMLButtonElement)?.disabled, null, { timeout: 20000 });

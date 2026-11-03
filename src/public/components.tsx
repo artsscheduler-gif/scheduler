@@ -14,11 +14,36 @@ export function useConfig() {
   }, []);
   useEffect(() => {
     if (config && /^#[0-9a-f]{6}$/i.test(config.brand_color)) {
-      document.documentElement.style.setProperty('--brand', config.brand_color);
+      const root = document.documentElement.style;
+      root.setProperty('--brand', config.brand_color);
+      // Text on brand-colored surfaces: dark on light brands (yellow), white on dark ones.
+      root.setProperty('--on-brand', luminance(config.brand_color) > 0.45 ? '#1d232a' : '#fff');
     }
     if (config) document.title = `Book a service · ${config.shop_name}`;
   }, [config]);
   return { config, failed };
+}
+
+function luminance(hex: string) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+const DAYS: [string, string][] = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['fri', 'Fri'], ['sat', 'Sat'], ['sun', 'Sun']];
+
+// Collapse runs of days with the same hours: "Mon–Fri 7:30am–5:30pm".
+function hoursLines(hours: PublicConfig['hours']): string[] {
+  const label = (h: { open: string; close: string } | null) => (h ? `${formatTime(h.open)}–${formatTime(h.close)}` : '');
+  const lines: string[] = [];
+  let i = 0;
+  while (i < DAYS.length) {
+    const cur = label(hours[DAYS[i][0]] ?? null);
+    let j = i;
+    while (j + 1 < DAYS.length && label(hours[DAYS[j + 1][0]] ?? null) === cur) j++;
+    if (cur) lines.push(`${DAYS[i][1]}${j > i ? `–${DAYS[j][1]}` : ''} ${cur}`);
+    i = j + 1;
+  }
+  return lines;
 }
 
 export function Shell({ config, step, children }: { config: PublicConfig | null; step?: number; children: ReactNode }) {
@@ -47,6 +72,22 @@ export function Shell({ config, step, children }: { config: PublicConfig | null;
         )}
       </header>
       <main className="pub-main">{children}</main>
+      {config && (
+        <footer className="pub-footer">
+          <div className="pub-footer-inner">
+            <div>
+              <strong>{config.shop_name}</strong>
+              {config.shop_address && <div>{config.shop_address}</div>}
+              {phone && <a href={telHref(phone)}>{phone}</a>}
+            </div>
+            {config.hours && (
+              <div>
+                {hoursLines(config.hours).map((l) => <div key={l}>{l}</div>)}
+              </div>
+            )}
+          </div>
+        </footer>
+      )}
     </div>
   );
 }
@@ -218,15 +259,25 @@ export function SlotPicker({
           {!times && <p className="loading">Loading times…</p>}
           {times && times.length === 0 && <p>That day just filled up. Pick another day.</p>}
           {times && times.length > 0 && (
-            <div className="times" role="radiogroup" aria-label="Start time">
-              {times.map((t) => {
-                const on = value?.date === date && value?.start_time === t;
-                return (
-                  <button key={t} type="button" role="radio" aria-checked={on} className={`time ${on ? 'on' : ''}`} onClick={() => onChange({ date, kind, start_time: t })}>
-                    {formatTime(t)}
-                  </button>
-                );
-              })}
+            <div role="radiogroup" aria-label="Start time">
+              {[
+                { label: 'Morning', group: times.filter((t) => t < '12:00') },
+                { label: 'Afternoon', group: times.filter((t) => t >= '12:00') },
+              ].filter((g) => g.group.length > 0).map(({ label, group }) => (
+                <div key={label} className="time-group">
+                  <h4>{label}</h4>
+                  <div className="times">
+                    {group.map((t) => {
+                      const on = value?.date === date && value?.start_time === t;
+                      return (
+                        <button key={t} type="button" role="radio" aria-checked={on} className={`time ${on ? 'on' : ''}`} onClick={() => onChange({ date, kind, start_time: t })}>
+                          {formatTime(t)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

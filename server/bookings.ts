@@ -194,6 +194,7 @@ export async function publicConfig() {
     shop_name: s.shop_name,
     shop_phone: s.shop_phone,
     shop_address: s.shop_address,
+    hours: s.hours,
     brand_color: s.brand_color,
     logo_url: s.logo_url,
     dropoff_window: [formatTime(s.dropoff_window_start), formatTime(s.dropoff_window_end)],

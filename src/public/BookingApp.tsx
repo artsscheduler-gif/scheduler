@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api, ApiError } from './api';
 import { CallUs, KindPicker, ServicePicker, Shell, SlotPicker, Turnstile, useConfig, type Slot } from './components';
+import { VehicleFields } from './vehicle';
 import { formatDate, formatTime } from '../../shared/time';
 
 type Step = 1 | 2 | 3 | 4 | 'done' | 'outage';
@@ -197,20 +198,7 @@ export function BookingApp() {
               <input name="email" type="email" autoComplete="email" required maxLength={254} />
               {errFor('email') && <span className="field-err">Check your email address.</span>}
             </label>
-            <div className="row3">
-              <label className={`field ${errFor('vehicle.year') ? 'bad' : ''}`}>
-                <span>Year</span>
-                <input name="year" inputMode="numeric" pattern="[0-9]{4}" maxLength={4} />
-              </label>
-              <label className={`field ${errFor('vehicle.make') ? 'bad' : ''}`}>
-                <span>Make</span>
-                <input name="make" required maxLength={40} placeholder="Honda" />
-              </label>
-              <label className={`field ${errFor('vehicle.model') ? 'bad' : ''}`}>
-                <span>Model</span>
-                <input name="model" required maxLength={60} placeholder="Civic" />
-              </label>
-            </div>
+            <VehicleFields errFor={errFor} />
             <label className="field">
               <span>Car notes <span className="muted">(optional — color, plate)</span></span>
               <input name="vnotes" maxLength={200} />
