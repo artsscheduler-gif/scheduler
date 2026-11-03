@@ -39,7 +39,8 @@ export function defaultBack(): string {
   return `<html><head><meta charset="utf-8"><style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { width: {{width}}; height: {{height}}; font-family: Arial, Helvetica, sans-serif; color: #1d232a; background: #fff; }
-  .left { position: absolute; left: 0.3in; top: 0.3in; bottom: 0.3in; width: 2.6in; display: flex; flex-direction: column; justify-content: space-between; }
+  /* bottom 0.75in: printers keep the bottom strip clear for postal barcodes */
+  .left { position: absolute; left: 0.3in; top: 0.3in; bottom: 0.75in; width: 2.6in; display: flex; flex-direction: column; justify-content: space-between; }
   h1 { font-size: 15pt; line-height: 1.2; }
   p { font-size: 10pt; line-height: 1.35; margin-top: 5pt; }
   .qr { width: 1.05in; height: 1.05in; display: block; }
