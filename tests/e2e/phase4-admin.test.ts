@@ -33,7 +33,10 @@ describe.skipIf(!up)('Phase 4: admin console', () => {
     await page.getByRole('heading', { name: /Waiting for you/ }).waitFor();
     expect(await page.locator('code').count()).toBe(0); // no authenticator setup
     expect(await page.getByRole('link', { name: 'Checklist' }).count()).toBe(0);
-    expect(await page.getByRole('link', { name: 'Team' }).count()).toBe(1);
+    // Chris's tabs: Day, Phone booking, Postcards, Settings, Help.
+    expect(await page.getByRole('link', { name: 'Team' }).count()).toBe(0);
+    expect(await page.getByRole('link', { name: 'Customers' }).count()).toBe(0);
+    expect(await page.getByRole('link', { name: 'Settings' }).count()).toBe(1);
   });
 
   it('signs in with MFA enrollment, approves a request, and every page renders', async () => {
@@ -112,7 +115,7 @@ describe.skipIf(!up)('Phase 4: admin console', () => {
     const [b] = await sql`select status from arts.bookings`;
     expect(b.status).toBe('confirmed');
 
-    for (const [path, text] of [['customers', 'Pick a customer.'], ['approvals', 'Approval ladder'], ['settings', 'Services'], ['activity', 'Changes'], ['export', 'Export'], ['book', 'Phone booking'], ['help', 'How to use the admin']]) {
+    for (const [path, text] of [['customers', 'Pick a customer.'], ['settings', 'Services'], ['activity', 'Changes'], ['export', 'Export'], ['book', 'Phone booking'], ['help', 'How to use the admin']]) {
       await page.goto(`${BASE}/admin/${path}`);
       await page.getByText(text).first().waitFor();
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-${path}.png`, fullPage: true });

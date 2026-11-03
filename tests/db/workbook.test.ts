@@ -16,7 +16,7 @@ async function currentServices() {
 
 beforeEach(async () => {
   await resetData();
-  owner = (await adminToken('owner')).token;
+  owner = (await adminToken('developer')).token;
 });
 
 describe('Workbook upload', () => {

@@ -238,6 +238,46 @@ function VehicleRow({ v, onSaved }: { v: any; onSaved: () => void }) {
   );
 }
 
+// After a monthly TRACS import: online-booked customers who probably match a
+// TRACS record the tech created at their first visit. Merge keeps the TRACS record.
+function MatchReview({ onMerged }: { onMerged: () => void }) {
+  const q = useQuery(() => adminPost<{ pairs: any[] }>('matches', {}));
+  const [msg, setMsg] = useState('');
+  if (!q.data?.pairs.length) return null;
+  const who = (c: any) => [c.name, formatPhone(c.phone), c.email, c.address_line1, (c.vehicles ?? []).map((v: any) => [v.year, v.make, v.model].filter(Boolean).join(' ')).join(', ')].filter(Boolean).join(' · ');
+  async function merge(p: any) {
+    if (!confirm(`Merge “${p.app.name}” (booked online) into the TRACS record “${p.tracs.name}”? Their bookings move to the TRACS record. You can undo this on the customer’s page.`)) return;
+    await adminPost('merge', { keep_id: p.tracs_id, merge_id: p.app_id });
+    setMsg(`Merged ${p.app.name}.`);
+    q.reload();
+    onMerged();
+  }
+  async function dismiss(p: any) {
+    await adminPost('match-dismiss', { app_id: p.app_id, tracs_id: p.tracs_id });
+    q.reload();
+  }
+  return (
+    <div className="settings-section match-review">
+      <h2>Possible matches from the last import <span className="count-pill">{q.data.pairs.length}</span></h2>
+      <p className="help">Customers who booked online, and a TRACS record that’s probably the same person (the tech set them up at their first visit).</p>
+      <ul className="acct-list">
+        {q.data.pairs.map((p) => (
+          <li key={`${p.app_id}-${p.tracs_id}`}>
+            <div><span className="badge">Booked online</span> {who(p.app)}</div>
+            <div><span className="badge">TRACS #{p.tracs.epicor_id}</span> {who(p.tracs)}</div>
+            <div className="muted small">Why: {p.reasons.join(', ')}</div>
+            <div className="row">
+              <button className="btn small primary" onClick={() => merge(p)}>Merge into TRACS record</button>
+              <button className="btn small" onClick={() => dismiss(p)}>Not the same</button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {msg && <p className="muted small" role="status">{msg}</p>}
+    </div>
+  );
+}
+
 export function Customers() {
   const [params, setParams] = useSearchParams();
   const [term, setTerm] = useState('');
@@ -251,6 +291,8 @@ export function Customers() {
   const list = useQuery(() => (byPlate ? searchByPlate(debounced) : search(debounced)) as Promise<any[]>, [debounced, byPlate]);
 
   return (
+    <>
+    <MatchReview onMerged={() => list.reload()} />
     <div className="split">
       <aside className="list-pane">
         <input className="search" placeholder={byPlate ? 'Plate or car notes' : 'Search name, phone, email'} value={term} onChange={(e) => setTerm(e.target.value)} aria-label="Search customers" />
@@ -271,5 +313,6 @@ export function Customers() {
       </aside>
       <section className="detail-pane">{selected ? <Detail id={selected} onChanged={list.reload} /> : <p className="muted">Pick a customer.</p>}</section>
     </div>
+    </>
   );
 }

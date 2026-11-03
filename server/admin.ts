@@ -221,6 +221,26 @@ async function updateVehicle(a: Admin, body: unknown): Promise<Result> {
   return { status: 200, body: after };
 }
 
+// After a TRACS import: likely pairs of an online-booked customer and the
+// TRACS record the tech created for them (arts.customer_match_candidates).
+async function matches(): Promise<Result> {
+  const pairs = await rpc<{ app_id: string; tracs_id: string; reasons: string[] }[]>('customer_match_candidates', {});
+  const ids = [...new Set(pairs.flatMap((p) => [p.app_id, p.tracs_id]))];
+  const { data: cs } = ids.length
+    ? await db().from('customers').select('id, name, email, phone, address_line1, city, epicor_id, created_at, vehicles(year, make, model)').in('id', ids)
+    : { data: [] as any[] };
+  const byId = new Map((cs ?? []).map((c: any) => [c.id, c]));
+  return { status: 200, body: { pairs: pairs.map((p) => ({ ...p, app: byId.get(p.app_id), tracs: byId.get(p.tracs_id) })) } };
+}
+
+async function dismissMatch(a: Admin, body: unknown): Promise<Result> {
+  const b = V.obj(body, ['app_id', 'tracs_id']);
+  const row = { app_id: V.uuid(b.app_id, 'app_id'), tracs_id: V.uuid(b.tracs_id, 'tracs_id') };
+  await db().from('customer_match_dismissals').upsert(row);
+  await audit(a, 'customer.match_dismissed', 'customer', row.app_id, null, row);
+  return { status: 200, body: { ok: true } };
+}
+
 // "Forget me": removes the customer's personal details, vehicles and history.
 async function forgetCustomer(a: Admin, body: unknown): Promise<Result> {
   const b = V.obj(body, ['customer_id']);
@@ -542,6 +562,8 @@ export async function adminAction(req: Req, action: string, body: unknown): Prom
     case 'merge': return mergeCustomers(a, body);
     case 'unmerge': return unmergeCustomers(a, body);
     case 'forget': return forgetCustomer(a, body);
+    case 'matches': return matches();
+    case 'match-dismiss': return dismissMatch(a, body);
     case 'settings': return updateSettings(a, body);
     case 'service': return upsertService(a, body);
     case 'level': return setLevel(a, body);

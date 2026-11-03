@@ -8,6 +8,7 @@ import { StubEmailProvider } from '../../server/email/provider';
 import { csvObjects } from '../../shared/csv';
 
 let chris: string;
+let jake: string;
 let oil: string;
 let brakes: string;
 let day: string;
@@ -15,6 +16,7 @@ let n = 0;
 
 beforeAll(async () => {
   chris = (await adminToken('owner')).token;
+  jake = (await adminToken('developer')).token;
 });
 afterAll(() => sql.end());
 
@@ -41,6 +43,8 @@ async function request(over: Record<string, unknown> = {}) {
 }
 
 const call = (action: string, body: unknown) => adminAction(reqWith(chris), action, body);
+// Customer records, export and the team are developer-only.
+const dev = (action: string, body: unknown) => adminAction(reqWith(jake), action, body);
 
 describe('Admin auth', () => {
   it('rejects missing tokens; only developers need the authenticator code', async () => {
@@ -205,19 +209,19 @@ describe('Audit log', () => {
     await call('decide', { booking_id: id, action: 'approve' });
     await call('move', { booking_id: id, date: day, kind: 'wait', start_time: '10:00' });
     await call('status', { booking_id: id, status: 'completed' });
-    await call('customer', { id: c.customer_id, fields: { always_review: true, city: 'Bethlehem' } });
+    await dev('customer', { id: c.customer_id, fields: { always_review: true, city: 'Bethlehem' } });
     await call('settings', { waiter_lanes: 2, notes_require_review: false });
     await call('service', { id: oil, name: 'Oil change', duration_minutes: 40, wait_eligible: true, sort_order: 1 });
-    await call('level', { service_id: oil, level: 'notify' });
+    await dev('level', { service_id: oil, level: 'notify' });
     await call('closure', { start_date: day, reason: 'Inventory' });
     await call('rule', { step: 4, channel: 'email', offset_days: 60, condition: 'no_booking_since_previous_step' });
-    await call('export', { table: 'customers' });
+    await dev('export', { table: 'customers' });
     const rows = await sql`select action, actor_type, actor_label from arts.audit_log order by id offset ${before}`;
     expect(rows.map((r) => r.action)).toEqual([
       'booking.approve', 'booking.move', 'booking.completed', 'customer.update', 'settings.update',
       'service.update', 'service.approval_level', 'closure.create', 'reminder_rule.create', 'export',
     ]);
-    expect(rows.every((r) => r.actor_type === 'admin' && r.actor_label === 'Chris')).toBe(true);
+    expect(rows.every((r) => r.actor_type === 'admin' && ['Chris', 'Jake'].includes(r.actor_label))).toBe(true);
     const [settingsRow] = await sql`select before, after from arts.audit_log where action = 'settings.update' order by id desc limit 1`;
     expect(settingsRow.before).toMatchObject({ notes_require_review: true });
     expect(settingsRow.after).toMatchObject({ notes_require_review: false });
@@ -227,7 +231,7 @@ describe('Audit log', () => {
     const [a] = await sql`insert into arts.customers (name, email) values ('Dana', 'dana@example.com') returning id`;
     const [b] = await sql`insert into arts.customers (name, phone, mail_opt_out) values ('Dana', '+16105550000', true) returning id`;
     await sql`insert into arts.service_history (customer_id, service_date, source) values (${b.id}, '2025-05-01', 'import')`;
-    await call('merge', { keep_id: a.id, merge_id: b.id });
+    await dev('merge', { keep_id: a.id, merge_id: b.id });
     const [kept] = await sql`select phone, mail_opt_out from arts.customers where id = ${a.id}`;
     expect(kept).toEqual({ phone: '+16105550000', mail_opt_out: true });
     const [{ c }] = await sql`select count(*)::int as c from arts.service_history where customer_id = ${a.id}`;
@@ -235,14 +239,14 @@ describe('Audit log', () => {
 
     // Undo puts both records back as they were.
     const [m] = await sql`select id from arts.customer_merges where keep_id = ${a.id}`;
-    expect((await call('unmerge', { merge_id: m.id })).status).toBe(200);
+    expect((await dev('unmerge', { merge_id: m.id })).status).toBe(200);
     const [kept2] = await sql`select phone, mail_opt_out from arts.customers where id = ${a.id}`;
     expect(kept2).toEqual({ phone: null, mail_opt_out: false });
     const [back] = await sql`select phone, mail_opt_out, merged_into from arts.customers where id = ${b.id}`;
     expect(back).toEqual({ phone: '+16105550000', mail_opt_out: true, merged_into: null });
     const [{ c: moved }] = await sql`select count(*)::int as c from arts.service_history where customer_id = ${b.id}`;
     expect(moved).toBe(1);
-    await expect(call('unmerge', { merge_id: m.id })).rejects.toMatchObject({ status: 409 });
+    await expect(dev('unmerge', { merge_id: m.id })).rejects.toMatchObject({ status: 409 });
   });
 });
 
@@ -251,7 +255,7 @@ describe('Removing vehicles and customers', () => {
     const a = await request();
     const [{ vehicle_id: vid, customer_id: cid }] = await sql`select vehicle_id, customer_id from arts.bookings where id = ${a.id}`;
     await sql`insert into arts.service_history (customer_id, vehicle_id, service_date, source) values (${cid}, ${vid}, '2025-05-01', 'import')`;
-    expect((await call('vehicle', { id: vid, delete: true })).body).toMatchObject({ ok: true, history_removed: 1 });
+    expect((await dev('vehicle', { id: vid, delete: true })).body).toMatchObject({ ok: true, history_removed: 1 });
     const [b] = await sql`select vehicle_id from arts.bookings where id = ${a.id}`;
     expect(b.vehicle_id).toBeNull();
     expect((await sql`select count(*)::int c from arts.vehicles where id = ${vid}`)[0].c).toBe(0);
@@ -260,7 +264,7 @@ describe('Removing vehicles and customers', () => {
   it('forgetting a customer removes their details and cancels upcoming visits', async () => {
     const a = await request({ customer_notes: 'Call my cell' });
     const [{ customer_id: cid }] = await sql`select customer_id from arts.bookings where id = ${a.id}`;
-    expect((await call('forget', { customer_id: cid })).body).toMatchObject({ ok: true, cancelled_upcoming: 1 });
+    expect((await dev('forget', { customer_id: cid })).body).toMatchObject({ ok: true, cancelled_upcoming: 1 });
     const [c] = await sql`select name, email, phone, email_opt_out from arts.customers where id = ${cid}`;
     expect(c).toEqual({ name: 'Removed customer', email: null, phone: null, email_opt_out: true });
     const [b] = await sql`select status, customer_notes from arts.bookings where id = ${a.id}`;
@@ -289,8 +293,10 @@ describe('Roles', () => {
 });
 
 describe('Team', () => {
-  it('owner invites, changes role, resets authenticator and removes', async () => {
-    const { token: ownerTok, userId: ownerId } = await adminToken('owner');
+  it('the developer invites, changes roles, resets authenticators and removes', async () => {
+    // Team is developer-only now; owners can't open it.
+    await expect(call('team-list', {})).rejects.toMatchObject({ status: 403 });
+    const { token: ownerTok, userId: ownerId } = await adminToken('developer');
     const { userId: devId } = await adminToken('developer');
     const owner = (action: string, body: unknown) => adminAction(reqWith(ownerTok), action, body);
     const email = `new-staff-${Date.now()}@example.com`;
@@ -303,10 +309,8 @@ describe('Team', () => {
     expect((await owner('team-role', { user_id: m.id, role: 'owner' })).status).toBe(200);
     expect((await owner('team-reset-mfa', { user_id: m.id })).body).toMatchObject({ ok: true, removed: 0 });
     await expect(owner('team-remove', { user_id: ownerId })).rejects.toMatchObject({ status: 409 });
-    // An owner can't touch a developer or make one.
-    await expect(owner('team-remove', { user_id: devId })).rejects.toMatchObject({ status: 403 });
-    await expect(owner('team-role', { user_id: devId, role: 'staff' })).rejects.toMatchObject({ status: 403 });
-    await expect(owner('team-role', { user_id: m.id, role: 'developer' })).rejects.toMatchObject({ status: 403 });
+    // A developer can manage other developers (the last one is protected).
+    expect((await owner('team-role', { user_id: devId, role: 'staff' })).status).toBe(200);
     expect((await owner('team-remove', { user_id: m.id })).status).toBe(200);
     expect(((await owner('team-list', {})).body as any).members.some((x: any) => x.email === email)).toBe(false);
   });
@@ -317,16 +321,16 @@ describe('Export', () => {
     await request({ customer_notes: 'Line one, "quoted"\nline two' });
     await sql`insert into arts.customers (name, email, city) values ('=cmd|evil', 'x@example.com', 'Allentown, PA')`;
     for (const table of ['customers', 'vehicles', 'service_history', 'bookings']) {
-      const r = await call('export', { table });
+      const r = await dev('export', { table });
       const rows = csvObjects((r.body as any).csv);
       const [{ c }] = await sql`select count(*)::int as c from ${sql('arts.' + table)}`;
       expect(rows.length).toBe(c);
     }
-    const customers = csvObjects(((await call('export', { table: 'customers' })).body as any).csv);
+    const customers = csvObjects(((await dev('export', { table: 'customers' })).body as any).csv);
     const evil = customers.find((x) => x.email === 'x@example.com')!;
     expect(evil.city).toBe('Allentown, PA');
     expect(evil.name).toBe("'=cmd|evil"); // formula-injection guard
-    const bookings = csvObjects(((await call('export', { table: 'bookings' })).body as any).csv);
+    const bookings = csvObjects(((await dev('export', { table: 'bookings' })).body as any).csv);
     expect(bookings[0].customer_notes).toBe('Line one, "quoted"\nline two');
     expect(bookings[0].services).toBe('Oil change');
     const [db] = await sql`select id, date::text, status::text from arts.bookings`;

@@ -5,7 +5,6 @@ import { DayView } from './DayView';
 import { BookingForm } from './BookingForm';
 import { Customers } from './Customers';
 import { Settings } from './Settings';
-import { Approvals } from './Approvals';
 import { Postcards } from './Postcards';
 import { Activity } from './Activity';
 import { Export } from './Export';
@@ -23,23 +22,23 @@ import { atLeast, isRole, ROLE_LABEL, type Role } from '../../shared/permissions
 const NAV: { to: string; label: string; min: Role; staging?: boolean }[] = [
   { to: '/admin', label: 'Day', min: 'staff' },
   { to: '/admin/book', label: 'Phone booking', min: 'staff' },
-  { to: '/admin/customers', label: 'Customers', min: 'staff' },
-  { to: '/admin/approvals', label: 'Approvals', min: 'owner' },
   { to: '/admin/postcards', label: 'Postcards', min: 'owner' },
   { to: '/admin/settings', label: 'Settings', min: 'owner' },
-  { to: '/admin/activity', label: 'Activity', min: 'staff' },
-  { to: '/admin/export', label: 'Export', min: 'owner' },
-  { to: '/admin/team', label: 'Team', min: 'owner' },
+  // Developer only from here.
+  { to: '/admin/customers', label: 'Customers', min: 'developer' },
+  { to: '/admin/activity', label: 'Activity', min: 'developer' },
+  { to: '/admin/export', label: 'Export', min: 'developer' },
+  { to: '/admin/team', label: 'Team', min: 'developer' },
   { to: '/admin/checklist', label: 'Checklist', min: 'developer' },
-  { to: '/admin/lab', label: 'Test lab', min: 'owner', staging: true },
-  { to: '/admin/outbox', label: 'Outbox', min: 'owner', staging: true },
-  { to: '/admin/simulator', label: 'Simulator', min: 'owner', staging: true },
+  { to: '/admin/lab', label: 'Test lab', min: 'developer', staging: true },
+  { to: '/admin/outbox', label: 'Outbox', min: 'developer', staging: true },
+  { to: '/admin/simulator', label: 'Simulator', min: 'developer', staging: true },
   { to: '/admin/help', label: 'Help', min: 'staff' },
 ];
 
 const PAGES: Record<string, ReactElement> = {
   book: <div className="narrow-page"><h2>Phone booking</h2><BookingForm /></div>,
-  customers: <Customers />, approvals: <Approvals />, postcards: <Postcards />, settings: <Settings />,
+  customers: <Customers />, postcards: <Postcards />, settings: <Settings />,
   activity: <Activity />, export: <Export />, team: <Team />, checklist: <Checklist />,
   lab: <Lab />, outbox: <Outbox />, simulator: <Simulator />,
 };

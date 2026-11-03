@@ -1,4 +1,4 @@
-// Epicor import. Dry run by default: writes a report and changes nothing.
+// Shop data import (NAPA TRACS export; monthly). Dry run by default: writes a report and changes nothing.
 //   npm run import:epicor -- --file import/private/epicor.csv
 //   npm run import:epicor -- --file import/private/epicor.csv --commit
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
@@ -37,6 +37,10 @@ console.log(`Report written to ${dir}/`);
 if (args.includes('--commit')) {
   const r = await commitImport(plan, stamp);
   console.log('Committed:', r);
+  // Customers who booked online and probably match a TRACS record just imported.
+  const { db } = await import('../server/db.js');
+  const { data: pairs } = await db().rpc('customer_match_candidates');
+  console.log(`${pairs?.length ?? 0} possible match(es) to review: admin → Customers → Possible matches.`);
 } else {
   console.log('Dry run only. Review the report, then re-run with --commit.');
 }

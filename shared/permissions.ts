@@ -1,10 +1,11 @@
 // Who can do what in the admin. Used by the server (enforced) and the admin
 // screens (what's shown). Three roles:
-//   staff     - day-to-day: requests, the schedule, customers, phone bookings
-//   owner     - runs the business (Chris): plus services, hours, settings,
-//               approvals, postcards, export/import and the team
-//   developer - maintains the system (Jake): plus technical settings and the
-//               launch checklist. Only a developer can add,
+//   staff     - day-to-day: requests, the schedule, phone bookings
+//   owner     - runs the business (Chris): plus services, hours, settings
+//               and postcards
+//   developer - maintains the system (Jake): plus customer records and
+//               merges, activity, export/import, the team, technical
+//               settings, the launch checklist and test tools. Only a developer can add,
 //               change or remove a developer.
 export type Role = 'developer' | 'owner' | 'staff';
 export const ROLES: Role[] = ['developer', 'owner', 'staff'];
@@ -35,16 +36,17 @@ export const TECH_SETTINGS = new Set([
 // Minimum role for each admin action.
 const ACTION_ROLE: Record<string, Role> = {
   decide: 'staff', check: 'staff', create: 'staff', move: 'staff', status: 'staff', resend: 'staff',
-  customer: 'staff', vehicle: 'staff', merge: 'staff', unmerge: 'staff', block: 'staff', 'postcard-preview': 'staff', 'postcard-status': 'staff', 'postcard-proof': 'staff',
-  forget: 'owner', settings: 'owner', service: 'owner', level: 'owner', closure: 'owner', rule: 'owner',
-  export: 'owner', 'batch-approve': 'owner', 'workbook-apply': 'owner', 'postcard-test': 'owner',
-  'team-list': 'owner', 'team-invite': 'owner', 'team-remove': 'owner', 'team-role': 'owner', 'team-reset-mfa': 'owner',
-  // Test-site tools (only on staging): owners test there too.
-  'outbox-clear': 'owner',
-  'audit-item': 'developer',
+  block: 'staff', 'postcard-preview': 'staff', 'postcard-status': 'staff', 'postcard-proof': 'staff',
+  settings: 'owner', service: 'owner', closure: 'owner', rule: 'owner', 'batch-approve': 'owner', 'postcard-test': 'owner',
+  // Customer records come from TRACS; fixing and merging them is the developer's job.
+  customer: 'developer', vehicle: 'developer', merge: 'developer', unmerge: 'developer', forget: 'developer',
+  matches: 'developer', 'match-dismiss': 'developer',
+  level: 'developer', export: 'developer', 'workbook-apply': 'developer',
+  'team-list': 'developer', 'team-invite': 'developer', 'team-remove': 'developer', 'team-role': 'developer', 'team-reset-mfa': 'developer',
+  'outbox-clear': 'developer', 'audit-item': 'developer',
 };
 
 export function minRoleFor(action: string): Role {
-  if (action.startsWith('sim-')) return 'owner';
+  if (action.startsWith('sim-')) return 'developer';
   return ACTION_ROLE[action] ?? 'developer';
 }

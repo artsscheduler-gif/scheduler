@@ -6,6 +6,8 @@ import { sql, resetData } from './helpers';
 import { csvObjects } from '../../shared/csv';
 import { planImport, fullYear, type Mapping } from '../../server/import';
 import { loadImportContext, commitImport } from '../../server/import-db';
+import { adminAction } from '../../server/admin';
+import { adminToken, reqWith } from './helpers';
 
 afterAll(() => sql.end());
 
@@ -65,5 +67,33 @@ describe('Epicor import commit', () => {
     const [h] = await sql`select service_date::text from arts.service_history`;
     expect(v.year).toBe(1998);
     expect(h.service_date).toBe('1998-03-15');
+  });
+
+  it('after a monthly import, an online customer is matched to the TRACS record the tech made', async () => {
+    // Booked online with a cell number; the tech typed the home number into TRACS.
+    const [app] = await sql`insert into arts.customers (name, phone, source) values ('Pat Doe', '+16105550111', 'booking') returning id`;
+    await sql`insert into arts.vehicles (customer_id, year, make, model) values (${app.id}, 2015, 'Honda', 'Fit')`;
+    await run(`${HEADER}\n3001,Patricia Doe,,6105559999,1 Main St,Easton,PA,18042,2015,Honda,Fit,03/01/2026,LOF,,,\n`);
+    const dev = (await adminToken('developer')).token;
+    const call = (action: string, body: unknown) => adminAction(reqWith(dev), action, body);
+    const { pairs } = (await call('matches', {})).body as any;
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0]).toMatchObject({ app_id: app.id, reasons: ['same car'], tracs: { epicor_id: '3001' } });
+    // Merge keeps the TRACS record.
+    await call('merge', { keep_id: pairs[0].tracs_id, merge_id: app.id });
+    expect(((await call('matches', {})).body as any).pairs).toEqual([]);
+    const [kept] = await sql`select epicor_id from arts.customers where id = ${pairs[0].tracs_id}`;
+    expect(kept.epicor_id).toBe('3001');
+  });
+
+  it('“Not the same” hides a pair for good', async () => {
+    await sql`insert into arts.customers (name, email, source) values ('Sam Lee', 'sam@example.com', 'booking')`;
+    await run(`${HEADER}\n3002,Sam Lee,,6105558888,9 Elm St,Easton,PA,18042,2010,Ford,F-150,03/01/2026,LOF,,,\n`);
+    const dev = (await adminToken('developer')).token;
+    const call = (action: string, body: unknown) => adminAction(reqWith(dev), action, body);
+    const [p] = ((await call('matches', {})).body as any).pairs;
+    expect(p.reasons).toEqual(['same name']);
+    await call('match-dismiss', { app_id: p.app_id, tracs_id: p.tracs_id });
+    expect(((await call('matches', {})).body as any).pairs).toEqual([]);
   });
 });

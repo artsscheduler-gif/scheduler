@@ -487,3 +487,10 @@ button.day.on { background: var(--brand); color: var(--on-brand); border-color: 
   .pub-phone { font-size: 0.88rem; }
   .pub-phone span[aria-hidden] { display: none; }
 }
+
+/* Customer card and TRACS badge */
+.tracs-badge { background: #fff1d6; color: #7a4a00; border: 1px solid #f0c66b; }
+.cust-details { margin: 10px 0; }
+.cust-details summary { cursor: pointer; color: var(--brand); font-weight: 600; }
+.cust-card h3 { margin: 12px 0 4px; font-size: 0.95rem; }
+.plain { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 0.92rem; }

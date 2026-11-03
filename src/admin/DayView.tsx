@@ -2,20 +2,21 @@ import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from 're
 import { useSearchParams, Link } from 'react-router';
 import { supabase } from '../lib/supabase';
 import { adminPost } from './api';
-import { Modal, OverrideConfirm, minutesOf, must, todayIn, useQuery, useSettings, type Settings } from './shared';
+import { Modal, OverrideConfirm, minutesOf, must, todayIn, useQuery, useRole, useSettings, type Settings } from './shared';
 import { BookingForm } from './BookingForm';
+import { CustomerCard, TracsBadge } from './CustomerCard';
 import { addDays, formatDate, formatTime, DOW_KEYS } from '../../shared/time';
 import { formatPhone } from '../../shared/phone';
 import { STATUS_LABEL } from '../../shared/rules';
 
-const SELECT = 'id, root_id, replaces_booking_id, change_kind, date, kind, start_time, total_minutes, status, customer_notes, auto_confirmed, approval_level, undo_until, created_at, created_by_type, source, customer_id, customers(id, name, phone, email, always_review), vehicles(year, make, model, notes), booking_services(services(id, name))';
+const SELECT = 'id, root_id, replaces_booking_id, change_kind, date, kind, start_time, total_minutes, status, customer_notes, auto_confirmed, approval_level, undo_until, created_at, created_by_type, source, customer_id, customers(id, name, phone, email, always_review, epicor_id), vehicles(year, make, model, notes), booking_services(services(id, name))';
 
 export interface B {
   id: string; root_id: string; replaces_booking_id: string | null; change_kind: string | null;
   date: string; kind: 'wait' | 'dropoff'; start_time: string | null; total_minutes: number; status: string;
   customer_notes: string; auto_confirmed: boolean; approval_level: string | null; undo_until: string | null;
   created_at: string; created_by_type: string; source: string | null; customer_id: string;
-  customers: { id: string; name: string; phone: string | null; email: string | null; always_review: boolean };
+  customers: { id: string; name: string; phone: string | null; email: string | null; always_review: boolean; epicor_id: string | null };
   vehicles: { year: number | null; make: string | null; model: string | null; notes: string } | null;
   booking_services: { services: { id: string; name: string } }[];
 }
@@ -78,7 +79,7 @@ function RequestCard({ b, original, s, onDone }: { b: B; original: B | null; s: 
     <div className={`req ${b.change_kind ? 'change' : ''}`}>
       <div className="req-head">
         <span className="badge">{b.change_kind ? 'Change request' : 'New request'}</span>
-        <strong>{b.customers.name}</strong>
+        <strong>{b.customers.name}</strong> <TracsBadge c={b.customers} />
         <span className="muted">{formatPhone(b.customers.phone)}</span>
         {b.customers.always_review && <span className="badge warn">Always review</span>}
         <span className="muted small push">received {new Date(b.created_at).toLocaleString('en-US', { timeZone: s.timezone, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
@@ -132,6 +133,7 @@ function RequestCard({ b, original, s, onDone }: { b: B; original: B | null; s: 
 }
 
 function BookingDetail({ b, s, onClose, onChanged }: { b: B; s: Settings; onClose: () => void; onChanged: () => void }) {
+  const role = useRole();
   const [slot, setSlot] = useState({ date: b.date, kind: b.kind, start_time: b.start_time?.slice(0, 5) ?? (b.kind === 'wait' ? '09:00' : '') });
   const [violations, setViolations] = useState<string[] | null>(null);
   const [msg, setMsg] = useState('');
@@ -168,7 +170,12 @@ function BookingDetail({ b, s, onClose, onChanged }: { b: B; s: Settings; onClos
         <dt>Email</dt><dd>{b.customers.email}</dd>
         {b.customer_notes && <><dt>Notes</dt><dd className="note">{b.customer_notes}</dd></>}
       </dl>
-      <p><Link to={`/admin/customers?id=${b.customer_id}`}>Open customer</Link></p>
+      <TracsBadge c={b.customers} />
+      <details className="cust-details">
+        <summary>Customer details</summary>
+        <CustomerCard id={b.customer_id} />
+        {role === 'developer' && <p><Link to={`/admin/customers?id=${b.customer_id}`}>Edit customer record</Link></p>}
+      </details>
       <div className="row wrap">
         {['confirmed', 'requested'].includes(b.status) && <button className="btn primary" onClick={() => status('completed')}>Mark completed</button>}
         {['confirmed', 'requested'].includes(b.status) && <button className="btn" onClick={() => status('no_show')}>No-show</button>}
@@ -583,7 +590,7 @@ export function DayView({ refresh }: { refresh?: unknown } = {}) {
               {layout.dropoffs.length === 0 && <p className="muted small">None yet. Drag a waiter here to make it a drop-off.</p>}
               {layout.dropoffs.map((b) => (
                 <button key={b.id} className={`drop st-${b.status}`} draggable={['confirmed', 'requested'].includes(b.status)} onDragStart={(e) => e.dataTransfer.setData('text/booking', b.id)} onClick={() => setDetail(b)}>
-                  <strong>{b.customers.name}</strong> <span className="muted">{b.start_time ? `${formatTime(b.start_time)} · ` : ''}{b.total_minutes} min</span>
+                  <strong>{b.customers.name}</strong> <span className="muted">{b.start_time ? `${formatTime(b.start_time)} · ` : ''}{b.total_minutes} min</span> <TracsBadge c={b.customers} />
                   <span>{svcNames(b)} · {vehicle(b)}</span>
                   {b.status !== 'confirmed' && <span className="badge">{STATUS_LABEL[b.status]}</span>}
                 </button>

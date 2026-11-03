@@ -4,7 +4,6 @@ import { adminPost } from './api';
 import { must, useQuery, useRole, useServices, useSettings, type ServiceRow, type Settings as S } from './shared';
 import { TECH_SETTINGS } from '../../shared/permissions';
 import { DOW_KEYS, formatDate } from '../../shared/time';
-import { LEVEL_LABEL } from '../../shared/rules';
 import { BlockForm, blockLabel, type Block } from './DayView';
 
 type Kind = 'text' | 'int' | 'bool' | 'time' | 'email' | 'color';
@@ -38,17 +37,12 @@ export const SECTIONS: { title: string; fields: F[] }[] = [
     ],
   },
   {
-    title: 'Approvals',
+    title: 'Requests',
     fields: [
-      { k: 'notes_require_review', label: 'Bookings with notes need my review', t: 'bool' },
-      { k: 'new_customers_require_review', label: 'New customers need my review', t: 'bool' },
       { k: 'notes_max_length', label: 'Notes max length', t: 'int' },
       { k: 'request_turnaround_business_hours', label: 'Promised turnaround (business hours)', t: 'int', help: 'Told to customers in the “request received” email.' },
       { k: 'escalate_staff_business_hours', label: 'Remind staff after (business hours)', t: 'int' },
       { k: 'escalate_owner_business_days', label: 'Alert owner after (business days)', t: 'int' },
-      { k: 'ladder_step2_approvals', label: 'Suggest step 2 after N approvals in a row', t: 'int' },
-      { k: 'ladder_step3_weeks', label: 'Suggest step 3 after N weeks at step 2 without undo', t: 'int' },
-      { k: 'undo_window_hours', label: 'Undo window (hours)', t: 'int' },
       { k: 'change_cutoff_hours', label: 'Customer changes close (hours before)', t: 'int' },
       { k: 'max_future_bookings', label: 'Max future bookings per customer', t: 'int' },
       { k: 'rate_limit_ip_per_hour', label: 'Bookings per IP per hour', t: 'int' },
@@ -230,7 +224,6 @@ function ServiceEditor({ row, onSaved }: { row: Partial<ServiceRow>; onSaved: ()
       <div className="svc-foot">
         <button className="btn primary small">{isNew ? 'Add service' : 'Save'}</button>
         {msg && <span className="muted small" role="status">{msg}</span>}
-        {row.approval_level && <span className="muted small push">Approval: {LEVEL_LABEL[row.approval_level]}</span>}
       </div>
     </form>
   );
@@ -334,7 +327,7 @@ export function Settings() {
     <div className="settings">
       <div className="settings-section">
         <h2>Services</h2>
-        <p className="help">What customers can book, in this order. Changing a time affects new bookings only. Approval levels are set on the Approvals page.</p>
+        <p className="help">What customers can book, in this order. Changing a time affects new bookings only.</p>
         <div className="svc-cards">
           {services.data?.map((r) => <ServiceEditor key={r.id} row={r} onSaved={services.reload} />)}
         </div>
