@@ -20,12 +20,17 @@ interface Member { id: string; email: string; name: string; role: string; last_s
 async function members(): Promise<Member[]> {
   const { data, error } = await auth().listUsers({ perPage: 1000 });
   if (error) throw new Error(error.message);
-  return data.users
-    .filter((u) => isRole(u.app_metadata?.role))
+  const admins = data.users.filter((u) => isRole(u.app_metadata?.role));
+  // The user list leaves out authenticator details: ask per person (a handful).
+  const mfa = new Map(await Promise.all(admins.map(async (u) => {
+    const { data: f } = await auth().mfa.listFactors({ userId: u.id });
+    return [u.id, (f?.factors ?? []).some((x) => x.status === 'verified')] as const;
+  })));
+  return admins
     .map((u) => ({
       id: u.id, email: u.email ?? '', name: (u.user_metadata?.name as string) ?? '', role: u.app_metadata.role,
       last_sign_in_at: u.last_sign_in_at ?? null,
-      mfa: (u.factors ?? []).some((f) => f.status === 'verified'),
+      mfa: mfa.get(u.id) ?? false,
       invited: !u.last_sign_in_at,
     }))
     .sort((x, y) => ROLES.indexOf(x.role as Role) - ROLES.indexOf(y.role as Role) || x.email.localeCompare(y.email));
