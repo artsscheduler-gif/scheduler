@@ -1,6 +1,7 @@
 // Loads a code-audit run into the admin Launch checklist (arts.audit_items).
 //   npx tsx scripts/audit-sync.ts dump                  # current items as JSON (for the /audit command)
 //   npx tsx scripts/audit-sync.ts apply audit/run.json  # record a run
+//   npx tsx scripts/audit-sync.ts done key1 key2 --note "Fixed in abc123"  # tick items Claude finished
 //   add --env .env.local to target the local database (default .env.staging.local)
 //
 // run.json: { "summary": "...", "findings": [Finding], "fixed": ["key", ...] }
@@ -80,10 +81,21 @@ async function apply(file: string) {
   console.log(`Run recorded: ${run.findings.length} findings (${added} new), ${fixed.length} verified fixed, ${missing.length} not found this time.`);
 }
 
+// Tick items Claude has fixed, verified and deployed (done_by 'Claude').
+async function done(keys: string[], note: string | undefined) {
+  const now = new Date().toISOString();
+  const rows = await must(db.from('audit_items').update({ done: true, done_at: now, done_by: 'Claude', audit_status: 'fixed', updated_at: now, ...(note ? { note } : {}) })
+    .in('key', keys).select('key')) as { key: string }[];
+  const missing = keys.filter((k) => !rows.some((r) => r.key === k));
+  console.log(`Ticked ${rows.length}: ${rows.map((r) => r.key).join(', ')}${missing.length ? `. Unknown keys: ${missing.join(', ')}` : ''}`);
+  if (missing.length) process.exit(1);
+}
+
 const cmd = args[0];
 if (cmd === 'dump') await dump();
+else if (cmd === 'done') await done(args.slice(1).filter((a, i, all) => !a.startsWith('--') && !(all[i - 1] ?? '').startsWith('--')), arg('--note'));
 else if (cmd === 'apply' && args[1]) await apply(args[1]);
 else {
-  console.error('Usage: audit-sync.ts dump | apply <run.json> [--env file]');
+  console.error('Usage: audit-sync.ts dump | apply <run.json> | done <key...> [--note text] [--env file]');
   process.exit(1);
 }

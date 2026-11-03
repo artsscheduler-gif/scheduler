@@ -71,3 +71,14 @@ npx tsx scripts/audit-sync.ts apply audit/run-YYYY-MM-DD.json
 
 Then tell Jake: how many findings, what's new, what's verified fixed, and the top three to do
 next, with a link to https://arts.jvtestspace.com/admin/checklist.
+
+## Keeping the checklist current between audits
+
+Whenever you fix a checklist item (tests pass, deployed to staging), tick it right away:
+
+```
+npx tsx scripts/audit-sync.ts done <key> [<key>...] --note "Fixed in <commit>, deployed to staging."
+```
+
+Jake reads the Checklist tab to see progress, so an unticked fix looks like no progress.
+Items Jake owns (accounts, keys, DNS, decisions) are his to tick.
