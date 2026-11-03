@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import { isRole } from '../../shared/permissions';
+import { isRole, mfaRequired } from '../../shared/permissions';
 
 type Stage =
   | { kind: 'loading' }
@@ -78,8 +78,10 @@ export function AuthGate({ children }: { children: (session: Session) => ReactNo
     const hash = window.location.hash;
     if (/type=(invite|recovery)/.test(hash)) return setStage({ kind: 'set-password' });
 
+    // Only developers need the authenticator code; owners and staff sign in
+    // with email and password (see shared/permissions: mfaRequired).
     const aal = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    if (aal.data?.currentLevel === 'aal2') {
+    if (aal.data?.currentLevel === 'aal2' || !mfaRequired(role)) {
       const { data: s } = await supabase.from('shop_settings').select('session_timeout_hours').eq('id', 1).single();
       const limitMs = (s?.session_timeout_hours ?? 12) * 3600_000;
       timeoutMs = limitMs;
@@ -102,7 +104,8 @@ export function AuthGate({ children }: { children: (session: Session) => ReactNo
 
     // Clean up abandoned enrollments, then start a fresh one.
     for (const f of unverified) await supabase.auth.mfa.unenroll({ factorId: f.id });
-    const enroll = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: `Authenticator ${new Date().toISOString().slice(0, 10)}` });
+    // A clear name in the authenticator app, so entries for different logins aren't mixed up.
+    const enroll = await supabase.auth.mfa.enroll({ factorType: 'totp', issuer: 'Art’s Servicenter', friendlyName: `Authenticator ${new Date().toISOString().slice(0, 10)}` });
     if (enroll.error) return setError(enroll.error.message);
     const next = { factorId: enroll.data.id, qr: enroll.data.totp.qr_code, secret: enroll.data.totp.secret, uri: enroll.data.totp.uri };
     writeEnroll(next);
@@ -129,13 +132,14 @@ export function AuthGate({ children }: { children: (session: Session) => ReactNo
     const f = new FormData(e.currentTarget);
     const { error } = await supabase.auth.signInWithPassword({ email: String(f.get('email')), password: String(f.get('password')) });
     if (error) return setError('Email or password is incorrect.');
+    writeLoginAt(Date.now()); // starts the sign-in timeout (developers restart it after their code)
     resolve();
   }
 
   async function onSetPassword(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const pw = String(new FormData(e.currentTarget).get('password'));
-    if (pw.length < 12) return setError('Use at least 12 characters.');
+    if (pw.length < 8) return setError('Use at least 8 characters.');
     const { error } = await supabase.auth.updateUser({ password: pw });
     if (error) return setError(error.message);
     history.replaceState(null, '', window.location.pathname);

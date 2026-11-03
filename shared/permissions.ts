@@ -15,6 +15,12 @@ export function isRole(v: unknown): v is Role {
   return typeof v === 'string' && (ROLES as string[]).includes(v);
 }
 
+// The authenticator (6-digit code) is required for developers only; owners
+// and staff sign in with email and password. (Revisit in the security audit.)
+export function mfaRequired(role: Role) {
+  return role === 'developer';
+}
+
 export function atLeast(role: Role, min: Role) {
   return RANK[role] >= RANK[min];
 }

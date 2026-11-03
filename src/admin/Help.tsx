@@ -206,7 +206,7 @@ export function Help({ role }: { role: Role }) {
       <div className="settings-section">
         <h2>Good to know</h2>
         <ul>
-          <li>Sign-in needs your password and the 6-digit code from your authenticator app. You’re signed out automatically after the time set in Settings (12 hours by default).</li>
+          <li>Owners and staff sign in with email and password. Developers also enter the 6-digit code from their authenticator app. Everyone is signed out automatically after the time set in Settings (12 hours by default).</li>
           <li>Customers can change or cancel online until the change cutoff (Settings → Approvals). After that they’re told to call.</li>
           <li>Everything you change is recorded in Activity, with your name.</li>
         </ul>

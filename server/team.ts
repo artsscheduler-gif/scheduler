@@ -57,7 +57,7 @@ export async function teamAction(a: Admin, action: string, body: unknown): Promi
       ...T.staffEmail(s, {
         subject: `You’re invited to the ${s.shop_name} admin`,
         heading: 'Set up your admin sign-in',
-        lines: [`${a.label} added you to the ${s.shop_name} booking admin. Choose a password, then add the 6-digit code from an authenticator app (Google Authenticator, 1Password, etc.).`, 'This link works once.'],
+        lines: [`${a.label} added you to the ${s.shop_name} booking admin. Choose a password, then sign in with your email and that password.${role === 'developer' ? ' As a developer you’ll also set up an authenticator app (Google Authenticator, 1Password, etc.).' : ''}`, 'This link works once.'],
         button: { label: 'Set my password', url: link },
       }),
     });

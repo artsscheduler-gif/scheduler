@@ -5,7 +5,7 @@ import { db, getSettings, rpc } from './db.js';
 import { env } from './env.js';
 import { teamAction } from './team.js';
 import { workbookApply } from './workbook.js';
-import { atLeast, isRole, minRoleFor, TECH_SETTINGS, type Role } from '../shared/permissions.js';
+import { atLeast, isRole, mfaRequired, minRoleFor, TECH_SETTINGS, type Role } from '../shared/permissions.js';
 import { HttpError, type Req, type Result } from './http.js';
 import * as V from './validate.js';
 import { cancelAttachment, loadBooking, notifyCreated, sendConfirmation, toView, manageLink } from './bookings.js';
@@ -27,7 +27,7 @@ function decodeJwt(token: string): Record<string, any> {
 }
 
 // Validates the bearer token with Supabase Auth, then requires an admin role
-// and a TOTP-verified (aal2) session.
+// and, for developers, a TOTP-verified (aal2) session.
 export async function requireAdmin(req: Req): Promise<Admin> {
   const h = req.headers.authorization ?? '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : '';
@@ -38,7 +38,7 @@ export async function requireAdmin(req: Req): Promise<Admin> {
   const role = data.user.app_metadata?.role;
   if (!isRole(role)) throw new HttpError(403, { error: 'forbidden' });
   const claims = decodeJwt(token);
-  if (claims.aal !== 'aal2') throw new HttpError(403, { error: 'mfa_required' });
+  if (mfaRequired(role) && claims.aal !== 'aal2') throw new HttpError(403, { error: 'mfa_required' });
   // Server-side session limit: the free Supabase plan can't time-box sessions,
   // so refuse tokens whose sign-in (earliest amr entry) is older than the setting.
   const signedInAt = Math.min(...((claims.amr ?? []) as { timestamp?: number }[]).map((x) => x.timestamp ?? Infinity));

@@ -22,6 +22,20 @@ afterAll(async () => {
 });
 
 describe.skipIf(!up)('Phase 4: admin console', () => {
+  it('an owner signs in with email and password only', async () => {
+    const email = `owner-e2e-${Date.now()}@example.com`;
+    await service.auth.admin.createUser({ email, password: 'simple-pass', email_confirm: true, app_metadata: { role: 'owner' }, user_metadata: { name: 'Chris' } });
+    const page = await (await browser.newContext()).newPage();
+    await page.goto(`${BASE}/admin`);
+    await page.getByLabel('Email').fill(email);
+    await page.getByLabel('Password').fill('simple-pass');
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await page.getByRole('heading', { name: /Waiting for you/ }).waitFor();
+    expect(await page.locator('code').count()).toBe(0); // no authenticator setup
+    expect(await page.getByRole('link', { name: 'Checklist' }).count()).toBe(0);
+    expect(await page.getByRole('link', { name: 'Team' }).count()).toBe(1);
+  });
+
   it('signs in with MFA enrollment, approves a request, and every page renders', async () => {
     const oil = await serviceId('Oil change');
     const day = await weekdayAhead(3);
@@ -32,7 +46,7 @@ describe.skipIf(!up)('Phase 4: admin console', () => {
     }, '10.8.0.1');
 
     const email = `chris-e2e-${Date.now()}@example.com`;
-    await service.auth.admin.createUser({ email, password: 'test-password-123456', email_confirm: true, app_metadata: { role: 'owner' } });
+    await service.auth.admin.createUser({ email, password: 'test-password-123456', email_confirm: true, app_metadata: { role: 'developer' } });
 
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();

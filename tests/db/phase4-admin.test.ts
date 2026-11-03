@@ -43,10 +43,16 @@ async function request(over: Record<string, unknown> = {}) {
 const call = (action: string, body: unknown) => adminAction(reqWith(chris), action, body);
 
 describe('Admin auth', () => {
-  it('rejects missing tokens, non-MFA sessions, and non-admins', async () => {
+  it('rejects missing tokens; only developers need the authenticator code', async () => {
     await expect(adminAction({ headers: {} } as any, 'check', {})).rejects.toMatchObject({ status: 401 });
-    const noMfa = await adminToken('staff', false);
-    await expect(adminAction(reqWith(noMfa.token), 'check', {})).rejects.toMatchObject({ status: 403, body: { error: 'mfa_required' } });
+    const devNoMfa = await adminToken('developer', false);
+    await expect(adminAction(reqWith(devNoMfa.token), 'check', {})).rejects.toMatchObject({ status: 403, body: { error: 'mfa_required' } });
+    // Owners and staff sign in with email and password only.
+    for (const role of ['owner', 'staff'] as const) {
+      const pw = await adminToken(role, false);
+      const r = await adminAction(reqWith(pw.token), 'check', { date: day, kind: 'wait', start_time: '09:00', service_ids: [oil] });
+      expect(r.status).toBe(200);
+    }
   });
 });
 

@@ -33,13 +33,13 @@ describe('Phase 1: database locked by default', () => {
   });
 });
 
-describe('Phase 1: admin access requires MFA', () => {
+describe('Phase 1: admin access (MFA for developers)', () => {
   const email = `admin-${Date.now()}@example.com`;
   const password = 'test-password-123456';
 
-  it('an admin without a verified TOTP factor reads nothing; with it, reads data', async () => {
+  it('a developer without a verified TOTP factor reads nothing; with it, reads data', async () => {
     const { data: created, error } = await service.auth.admin.createUser({
-      email, password, email_confirm: true, app_metadata: { role: 'staff' },
+      email, password, email_confirm: true, app_metadata: { role: 'developer' },
     });
     expect(error).toBeNull();
 
@@ -70,6 +70,17 @@ describe('Phase 1: admin access requires MFA', () => {
     const write = await client.from('customers').insert({ name: 'Direct write' });
     expect(write.error).not.toBeNull();
 
+    await service.auth.admin.deleteUser(created.user!.id);
+  });
+
+  it('owners and staff read data with email and password only, and still cannot write', async () => {
+    const e2 = `staff-pw-${Date.now()}@example.com`;
+    const { data: created } = await service.auth.admin.createUser({ email: e2, password, email_confirm: true, app_metadata: { role: 'staff' } });
+    const client = createClient<any, 'arts'>(url, anonKey, { db: { schema: 'arts' }, auth: { persistSession: false } });
+    await client.auth.signInWithPassword({ email: e2, password });
+    const rows = await client.from('customers').select('id');
+    expect(rows.data!.length).toBeGreaterThan(0);
+    expect((await client.from('customers').insert({ name: 'Direct write' })).error).not.toBeNull();
     await service.auth.admin.deleteUser(created.user!.id);
   });
 

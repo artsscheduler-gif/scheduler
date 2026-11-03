@@ -72,7 +72,7 @@ export function Team() {
                   ) : ROLE_LABEL[m.role]}
                 </td>
                 <td>{m.invited ? 'Invited, not signed in yet' : when(m.last_sign_in_at)}</td>
-                <td>{m.mfa ? 'Set up' : 'Not yet'}</td>
+                <td>{m.role !== 'developer' ? (m.mfa ? 'Set up (optional)' : 'Not needed') : m.mfa ? 'Set up' : 'Not yet'}</td>
                 <td className="row wrap">
                   {m.mfa && canManage(m) && <button className="btn small" onClick={() => confirm(`Reset ${m.name || m.email}’s authenticator? They’ll scan a new QR code at their next sign-in.`) && act('team-reset-mfa', { user_id: m.id }, 'Authenticator reset.')}>Reset authenticator</button>}
                   {canManage(m) && <button className="btn small danger" onClick={() => confirm(`Remove ${m.name || m.email}? They can no longer sign in.`) && act('team-remove', { user_id: m.id }, 'Removed.')}>Remove</button>}
@@ -90,7 +90,7 @@ export function Team() {
           <select name="role" aria-label="Role" defaultValue="staff">{grantable.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
           <button className="btn primary" disabled={busy}>{busy ? 'Inviting…' : 'Send invite'}</button>
         </form>
-        <p className="help">They get an email with a link to choose a password, then set up an authenticator app at first sign-in.</p>
+        <p className="help">They get an email with a link to choose a password. Owners and staff then sign in with email and password; developers also set up an authenticator app.</p>
         {link && (
           <div className="notice">
             <strong>Set-password link</strong> (works once)
