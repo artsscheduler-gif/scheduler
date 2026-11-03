@@ -14,8 +14,8 @@ const email = arg('--email');
 const role = arg('--role') ?? 'staff';
 const name = arg('--name') ?? '';
 const redirectTo = `${(process.env.APP_URL ?? 'http://localhost:5173').replace(/\/$/, '')}/admin`;
-if (!email || !['owner', 'staff'].includes(role)) {
-  console.error('Usage: npm run admin:add -- --email <email> --role owner|staff [--name <display name>]');
+if (!email || !['developer', 'owner', 'staff'].includes(role)) {
+  console.error('Usage: npm run admin:add -- --email <email> --role developer|owner|staff [--name <display name>]');
   process.exit(1);
 }
 const supa = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });

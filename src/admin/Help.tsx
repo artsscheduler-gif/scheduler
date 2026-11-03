@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
 import { STAGING } from '../lib/env';
+import { atLeast, type Role } from '../../shared/permissions';
 
 // The admin user manual: what each tab is for and how to do everyday tasks.
 // Keep it in step with the tabs in AdminApp.tsx.
 
-interface Topic { id: string; title: string; who?: string; body: ReactNode }
+interface Topic { id: string; title: string; who?: string; min?: Role; body: ReactNode }
 
 const TASKS: Topic[] = [
   {
@@ -90,7 +91,7 @@ const TABS: Topic[] = [
     ),
   },
   {
-    id: 'tab-approvals', title: 'Approvals',
+    id: 'tab-approvals', who: 'Owner and developer', min: 'owner', title: 'Approvals',
     body: (
       <>
         <p>Decides which bookings need your OK, per service. Every service starts at step 1.</p>
@@ -104,11 +105,11 @@ const TABS: Topic[] = [
     ),
   },
   {
-    id: 'tab-postcards', title: 'Postcards',
+    id: 'tab-postcards', who: 'Owner and developer', min: 'owner', title: 'Postcards',
     body: <p>Service-due reminder postcards collect here each week. Review the batch and click <b>Approve and send</b> to mail them (each postcard costs money). A big batch may stop partway; click <b>Continue sending</b> to finish it (nothing is mailed twice). <b>Template</b> edits the front and back design. <b>Past batches</b> shows what was mailed.</p>,
   },
   {
-    id: 'tab-settings', title: 'Settings',
+    id: 'tab-settings', who: 'Owner and developer', min: 'owner', title: 'Settings',
     body: (
       <ul>
         <li><b>Services</b>: what customers can book, how long each takes, daily limits, extra notice, reminder interval, whether customers can wait.</li>
@@ -127,30 +128,40 @@ const TABS: Topic[] = [
     body: <p>A record of everything that happened: <b>Changes</b> (who changed what, before and after), <b>Reminders</b> sent, <b>Emails</b> sent and whether they failed, and <b>Scheduled jobs</b> (the daily and hourly runs, with any errors). Type in the filter box to narrow any list; <b>Show older</b> loads more. Times are shop time.</p>,
   },
   {
-    id: 'tab-export', title: 'Export',
+    id: 'tab-export', who: 'Owner and developer', min: 'owner', title: 'Export',
     body: <p>Download customers, vehicles, service history, bookings, or services as a spreadsheet (CSV). Contains customer personal information: store it carefully.</p>,
   },
   {
-    id: 'tab-team', title: 'Team', who: 'Owner only',
-    body: <p>Who can sign in. <b>Send invite</b> emails a set-password link (and shows it so you can text it too). <b>Reset authenticator</b> is for a lost or new phone: they scan a new QR code at their next sign-in. <b>Make owner/staff</b> changes what they can see; <b>Remove</b> stops them signing in. The last owner can’t be removed.</p>,
+    id: 'tab-team', title: 'Team', who: 'Owner and developer', min: 'owner',
+    body: (
+      <>
+        <p>Who can sign in, and what they can do:</p>
+        <ul>
+          <li><b>Staff</b>: requests, the schedule, customers, phone bookings, blocked time, activity.</li>
+          <li><b>Owner</b>: everything staff can, plus services, hours, closures, settings, approvals, postcards, export/import and the team.</li>
+          <li><b>Developer</b>: everything, including technical settings (timezone, sign-in timeout, sender address, alert emails, rate limits, postcard design code) and the test tools. Only a developer can add, change or remove a developer.</li>
+        </ul>
+        <p><b>Send invite</b> emails a set-password link (and shows it so you can text it too). <b>Reset authenticator</b> is for a lost or new phone. <b>Remove</b> stops them signing in. You can’t change your own role or remove yourself.</p>
+      </>
+    ),
   },
   {
-    id: 'tab-checklist', title: 'Checklist', who: 'Owner only',
+    id: 'tab-checklist', title: 'Checklist', who: 'Developer', min: 'developer',
     body: <p>The launch checklist from code audits. Tick items as they’re done; add notes or decisions under <b>Details</b>. To rerun the audit, type <b>/audit</b> in Claude Code in the project folder: new problems are added and fixed ones are flagged.</p>,
   },
 ];
 
 const STAGING_TABS: Topic[] = [
   {
-    id: 'tab-lab', title: 'Test lab', who: 'Test site only',
+    id: 'tab-lab', title: 'Test lab', who: 'Developer, test site only', min: 'developer',
     body: <p>Play the customer and the shop at once. <b>Open customer phone</b> opens the booking page in a phone-sized window. Every email appears in the feed on the left (marked To customer / To Chris / To owner); links in an email open in the phone. The shop’s Day view is on the right. <b>Run</b> under Reminders runs the daily jobs for a date, to see reminder emails.</p>,
   },
   {
-    id: 'tab-outbox', title: 'Outbox', who: 'Test site only',
+    id: 'tab-outbox', title: 'Outbox', who: 'Developer, test site only', min: 'developer',
     body: <p>Every email the test site would have sent, exactly as the recipient would see it. Nothing is delivered, except a [TEST] copy to artsscheduler@gmail.com.</p>,
   },
   {
-    id: 'tab-simulator', title: 'Simulator', who: 'Test site only',
+    id: 'tab-simulator', title: 'Simulator', who: 'Developer, test site only', min: 'developer',
     body: <p>Fills the test site with fake customers (@sim.invalid addresses) and booking requests, and fast-forwards days to see reminders and postcards. <b>Reset simulated data</b> removes everything fake.</p>,
   },
 ];
@@ -164,8 +175,8 @@ function Section({ t }: { t: Topic }) {
   );
 }
 
-export function Help({ owner }: { owner: boolean }) {
-  const tabs = [...TABS.filter((t) => owner || !['tab-checklist', 'tab-team'].includes(t.id)), ...(STAGING ? STAGING_TABS : [])];
+export function Help({ role }: { role: Role }) {
+  const tabs = [...TABS, ...(STAGING ? STAGING_TABS : [])].filter((t) => atLeast(role, t.min ?? 'staff'));
   return (
     <div className="help-page">
       <h2>How to use the admin</h2>

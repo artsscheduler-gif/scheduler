@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { supabase } from '../lib/supabase';
 import { adminPost } from './api';
-import { must, useQuery } from './shared';
+import { must, useQuery, useRole } from './shared';
 import { formatPhone } from '../../shared/phone';
 import { formatDate, formatTime } from '../../shared/time';
 import { STATUS_LABEL } from '../../shared/rules';
@@ -41,6 +41,7 @@ async function searchByPlate(term: string) {
 }
 
 function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
+  const role = useRole();
   const c = useQuery(() => must(supabase.from('customers').select('*, vehicles(*)').eq('id', id).single()), [id]);
   const history = useQuery(() => must(supabase.from('service_history').select('id, service_date, raw_service, source, mileage, services(name), vehicles(year, make, model)').eq('customer_id', id).order('service_date', { ascending: false })), [id]);
   const bookings = useQuery(() => must(supabase.from('bookings').select('id, date, kind, start_time, status, booking_services(services(name))').eq('customer_id', id).neq('status', 'replaced').order('date', { ascending: false }).limit(50)), [id]);
@@ -186,11 +187,13 @@ function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
         </tbody>
       </table>
 
-      <div className="danger-zone">
-        <h3>Remove this customer</h3>
-        <p className="help">For a customer who asks to be forgotten: removes their name, contact details, vehicles and service history, and cancels upcoming appointments (no email is sent). Past bookings stay without their details. This can’t be undone.</p>
-        <button className="btn small danger" onClick={forget}>Forget this customer</button>
-      </div>
+      {role !== 'staff' && (
+        <div className="danger-zone">
+          <h3>Remove this customer</h3>
+          <p className="help">For a customer who asks to be forgotten: removes their name, contact details, vehicles and service history, and cancels upcoming appointments (no email is sent). Past bookings stay without their details. This can’t be undone.</p>
+          <button className="btn small danger" onClick={forget}>Forget this customer</button>
+        </div>
+      )}
 
       <h3>Reminders sent</h3>
       <table className="tbl">

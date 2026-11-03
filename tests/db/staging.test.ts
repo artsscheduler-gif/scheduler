@@ -8,7 +8,7 @@ let jake: string;
 const act = (action: string, body: unknown = {}) => adminAction(reqWith(jake), action, body);
 
 beforeAll(async () => {
-  jake = (await adminToken('owner')).token;
+  jake = (await adminToken('developer')).token;
 });
 afterAll(() => sql.end());
 
@@ -36,7 +36,7 @@ describe('staging gate', () => {
   });
 
   it('still requires an MFA-verified admin', async () => {
-    const nomfa = (await adminToken('owner', false)).token;
+    const nomfa = (await adminToken('developer', false)).token;
     await expect(adminAction(reqWith(nomfa), 'sim-status', {})).rejects.toMatchObject({ status: 403 });
   });
 });

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import type { Role } from '../../shared/permissions';
 import { supabase } from '../lib/supabase';
 import { describeViolation } from '../../shared/rules';
 
@@ -76,3 +77,7 @@ export function minutesOf(t: string) {
 export function todayIn(tz: string) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
 }
+
+// The signed-in admin's role, for showing only what they can use.
+export const RoleContext = createContext<Role>('staff');
+export const useRole = () => useContext(RoleContext);

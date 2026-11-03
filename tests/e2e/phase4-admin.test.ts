@@ -31,7 +31,7 @@ describe.skipIf(!up)('Phase 4: admin console', () => {
     }, '10.8.0.1');
 
     const email = `chris-e2e-${Date.now()}@example.com`;
-    await service.auth.admin.createUser({ email, password: 'test-password-123456', email_confirm: true, app_metadata: { role: 'staff' } });
+    await service.auth.admin.createUser({ email, password: 'test-password-123456', email_confirm: true, app_metadata: { role: 'owner' } });
 
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();

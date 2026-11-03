@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { db, getSettings, rpc } from './db.js';
 import { env } from './env.js';
 import { teamAction } from './team.js';
+import { atLeast, isRole, minRoleFor, TECH_SETTINGS, type Role } from '../shared/permissions.js';
 import { HttpError, type Req, type Result } from './http.js';
 import * as V from './validate.js';
 import { cancelAttachment, loadBooking, notifyCreated, sendConfirmation, toView, manageLink } from './bookings.js';
@@ -14,7 +15,7 @@ import { toCsv, EXPORTS } from './export.js';
 import { approveBatch, postcardPreview } from './reminders.js';
 import { simulatorAction } from './simulator.js';
 
-export interface Admin { id: string; email: string; role: 'owner' | 'staff'; label: string }
+export interface Admin { id: string; email: string; role: Role; label: string }
 
 function decodeJwt(token: string): Record<string, any> {
   try {
@@ -34,7 +35,7 @@ export async function requireAdmin(req: Req): Promise<Admin> {
   const { data, error } = await auth.auth.getUser(token);
   if (error || !data.user) throw new HttpError(401, { error: 'unauthenticated' });
   const role = data.user.app_metadata?.role;
-  if (role !== 'owner' && role !== 'staff') throw new HttpError(403, { error: 'forbidden' });
+  if (!isRole(role)) throw new HttpError(403, { error: 'forbidden' });
   const claims = decodeJwt(token);
   if (claims.aal !== 'aal2') throw new HttpError(403, { error: 'mfa_required' });
   // Server-side session limit: the free Supabase plan can't time-box sessions,
@@ -301,6 +302,8 @@ function parseHours(v: unknown) {
 
 async function updateSettings(a: Admin, body: unknown): Promise<Result> {
   const b = V.obj(body, Object.keys(SETTINGS_FIELDS), 'settings');
+  const tech = Object.keys(b).filter((k) => TECH_SETTINGS.has(k));
+  if (tech.length && a.role !== 'developer') throw new HttpError(403, { error: 'developer_only', fields: tech });
   const patch: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(b)) {
     const t = SETTINGS_FIELDS[k];
@@ -382,7 +385,6 @@ async function closure(a: Admin, body: unknown): Promise<Result> {
 
 // Launch checklist (owner only): tick an item or edit its note.
 async function auditItem(a: Admin, body: unknown): Promise<Result> {
-  if (a.role !== 'owner') throw new HttpError(403, { error: 'owner_only' });
   const b = V.obj(body, ['id', 'done', 'note']);
   const id = V.uuid(b.id, 'id');
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -476,6 +478,8 @@ async function resendManage(a: Admin, body: unknown): Promise<Result> {
 
 export async function adminAction(req: Req, action: string, body: unknown): Promise<Result> {
   const a = await requireAdmin(req);
+  const need = minRoleFor(action);
+  if (!atLeast(a.role, need)) throw new HttpError(403, { error: `${need}_only` });
   if (action.startsWith('sim-') || action === 'outbox-clear') return simulatorAction(a, action, body);
   if (action.startsWith('team-')) return teamAction(a, action, body);
   switch (action) {

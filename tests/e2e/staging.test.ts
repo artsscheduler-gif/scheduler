@@ -33,7 +33,7 @@ afterAll(async () => {
 describe.skipIf(!staging)('Staging: simulator and outbox', () => {
   it('loads customers, books, fast-forwards, and shows captured email', async () => {
     const email = `jake-e2e-${Date.now()}@example.com`;
-    await service.auth.admin.createUser({ email, password: 'test-password-123456', email_confirm: true, app_metadata: { role: 'owner' } });
+    await service.auth.admin.createUser({ email, password: 'test-password-123456', email_confirm: true, app_metadata: { role: 'developer' } });
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
     const errors: string[] = [];
@@ -75,7 +75,7 @@ describe.skipIf(!staging)('Staging: simulator and outbox', () => {
   it('test lab: customer books in the phone window, Chris approves, emails show the flow', async () => {
     await sql`delete from arts.email_outbox`;
     const email = `jake-lab-${Date.now()}@example.com`;
-    await service.auth.admin.createUser({ email, password: 'test-password-123456', email_confirm: true, app_metadata: { role: 'owner' } });
+    await service.auth.admin.createUser({ email, password: 'test-password-123456', email_confirm: true, app_metadata: { role: 'developer' } });
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await ctx.newPage();
     const errors: string[] = [];

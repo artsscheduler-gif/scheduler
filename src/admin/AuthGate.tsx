@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { isRole } from '../../shared/permissions';
 
 type Stage =
   | { kind: 'loading' }
@@ -72,7 +73,7 @@ export function AuthGate({ children }: { children: (session: Session) => ReactNo
     if (!session) return setStage({ kind: 'signin' });
 
     const role = session.user.app_metadata?.role;
-    if (role !== 'owner' && role !== 'staff') return setStage({ kind: 'denied' });
+    if (!isRole(role)) return setStage({ kind: 'denied' });
 
     const hash = window.location.hash;
     if (/type=(invite|recovery)/.test(hash)) return setStage({ kind: 'set-password' });

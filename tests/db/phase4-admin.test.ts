@@ -14,7 +14,7 @@ let day: string;
 let n = 0;
 
 beforeAll(async () => {
-  chris = (await adminToken('staff')).token;
+  chris = (await adminToken('owner')).token;
 });
 afterAll(() => sql.end());
 
@@ -118,12 +118,14 @@ describe('Status changes', () => {
 
 describe('Settings safety', () => {
   it('rejects values that would lock people out or break scheduling', async () => {
-    await expect(call('settings', { session_timeout_hours: 0 })).rejects.toMatchObject({ field: 'session_timeout_hours' });
-    await expect(call('settings', { timezone: 'America/New_Yrok' })).rejects.toMatchObject({ field: 'timezone' });
+    const dev = (await adminToken('developer')).token;
+    const asDev = (body: unknown) => adminAction(reqWith(dev), 'settings', body);
+    await expect(asDev({ session_timeout_hours: 0 })).rejects.toMatchObject({ field: 'session_timeout_hours' });
+    await expect(asDev({ timezone: 'America/New_Yrok' })).rejects.toMatchObject({ field: 'timezone' });
     await expect(call('settings', { staff_notify_email: 'chris@' })).rejects.toThrow(/valid email/);
     await expect(call('settings', { waiter_lanes: 9 })).rejects.toThrow(/more than total lanes/);
     await expect(call('settings', { dropoff_window_end: '07:00' })).rejects.toThrow(/after the earliest/);
-    expect((await call('settings', { session_timeout_hours: 8, timezone: 'America/Chicago' })).status).toBe(200);
+    expect((await asDev({ session_timeout_hours: 8, timezone: 'America/Chicago' })).status).toBe(200);
   });
 
   it('the server ends admin sessions older than the timeout setting', async () => {
@@ -140,11 +142,11 @@ describe('Settings safety', () => {
 });
 
 describe('Launch checklist', () => {
-  it('only the owner can tick items; ticks are audited', async () => {
+  it('only the developer can tick items; ticks are audited', async () => {
     const [item] = await sql`insert into arts.audit_items (key, section, title) values ('test-item', 'Test', 'Something to fix') returning id`;
     await expect(call('audit-item', { id: item.id, done: true })).rejects.toMatchObject({ status: 403 });
-    const owner = (await adminToken('owner')).token;
-    const r = await adminAction(reqWith(owner), 'audit-item', { id: item.id, done: true, note: 'Done in staging' });
+    const dev = (await adminToken('developer')).token;
+    const r = await adminAction(reqWith(dev), 'audit-item', { id: item.id, done: true, note: 'Done in staging' });
     expect(r.body).toMatchObject({ done: true, note: 'Done in staging' });
     expect((r.body as any).done_at).toBeTruthy();
     const [log] = await sql`select action from arts.audit_log where entity = 'audit_item'`;
@@ -263,10 +265,27 @@ describe('Removing vehicles and customers', () => {
   });
 });
 
+describe('Roles', () => {
+  it('staff do the day-to-day; owners run the business; developers own technical settings', async () => {
+    const staff = (await adminToken('staff')).token;
+    const asStaff = (action: string, body: unknown) => adminAction(reqWith(staff), action, body);
+    const a = await request();
+    expect((await asStaff('decide', { booking_id: a.id, action: 'approve' })).status).toBe(200);
+    await expect(asStaff('settings', { notes_max_length: 400 })).rejects.toMatchObject({ status: 403 });
+    await expect(asStaff('service', { name: 'X', duration_minutes: 30, wait_eligible: false })).rejects.toMatchObject({ status: 403 });
+    await expect(asStaff('export', { table: 'customers' })).rejects.toMatchObject({ status: 403 });
+    await expect(asStaff('team-list', {})).rejects.toMatchObject({ status: 403 });
+    // Owner: business settings yes, technical settings no.
+    expect((await call('settings', { notes_max_length: 400 })).status).toBe(200);
+    await expect(call('settings', { from_email: 'x@example.com' })).rejects.toMatchObject({ status: 403, body: { error: 'developer_only' } });
+    await expect(call('sim-status', {})).rejects.toMatchObject({ status: 403 });
+  });
+});
+
 describe('Team', () => {
-  it('owner invites, changes role, resets authenticator and removes; staff cannot', async () => {
-    await expect(call('team-list', {})).rejects.toMatchObject({ status: 403 });
+  it('owner invites, changes role, resets authenticator and removes', async () => {
     const { token: ownerTok, userId: ownerId } = await adminToken('owner');
+    const { userId: devId } = await adminToken('developer');
     const owner = (action: string, body: unknown) => adminAction(reqWith(ownerTok), action, body);
     const email = `new-staff-${Date.now()}@example.com`;
     const inv = await owner('team-invite', { email, name: 'New Staff', role: 'staff' });
@@ -278,6 +297,10 @@ describe('Team', () => {
     expect((await owner('team-role', { user_id: m.id, role: 'owner' })).status).toBe(200);
     expect((await owner('team-reset-mfa', { user_id: m.id })).body).toMatchObject({ ok: true, removed: 0 });
     await expect(owner('team-remove', { user_id: ownerId })).rejects.toMatchObject({ status: 409 });
+    // An owner can't touch a developer or make one.
+    await expect(owner('team-remove', { user_id: devId })).rejects.toMatchObject({ status: 403 });
+    await expect(owner('team-role', { user_id: devId, role: 'staff' })).rejects.toMatchObject({ status: 403 });
+    await expect(owner('team-role', { user_id: m.id, role: 'developer' })).rejects.toMatchObject({ status: 403 });
     expect((await owner('team-remove', { user_id: m.id })).status).toBe(200);
     expect(((await owner('team-list', {})).body as any).members.some((x: any) => x.email === email)).toBe(false);
   });

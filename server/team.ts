@@ -1,4 +1,5 @@
-// Owner-only: who can sign in to the admin. Invites send a set-password link
+// Who can sign in to the admin (owners and developers; see shared/permissions).
+// Owners manage owners and staff; only a developer can add, change or remove a developer. Invites send a set-password link
 // (through the shop's email) and return it so the owner can also pass it on.
 import { createClient } from '@supabase/supabase-js';
 import { env } from './env.js';
@@ -6,6 +7,7 @@ import { getSettings, rpc } from './db.js';
 import { HttpError, type Result } from './http.js';
 import type { Admin } from './admin.js';
 import * as V from './validate.js';
+import { isRole, ROLES, type Role } from '../shared/permissions.js';
 import { sendEmail } from './email/send.js';
 import * as T from './email/templates.js';
 
@@ -19,28 +21,30 @@ async function members(): Promise<Member[]> {
   const { data, error } = await auth().listUsers({ perPage: 1000 });
   if (error) throw new Error(error.message);
   return data.users
-    .filter((u) => ['owner', 'staff'].includes(u.app_metadata?.role))
+    .filter((u) => isRole(u.app_metadata?.role))
     .map((u) => ({
       id: u.id, email: u.email ?? '', name: (u.user_metadata?.name as string) ?? '', role: u.app_metadata.role,
       last_sign_in_at: u.last_sign_in_at ?? null,
       mfa: (u.factors ?? []).some((f) => f.status === 'verified'),
       invited: !u.last_sign_in_at,
     }))
-    .sort((x, y) => x.role.localeCompare(y.role) || x.email.localeCompare(y.email));
+    .sort((x, y) => ROLES.indexOf(x.role as Role) - ROLES.indexOf(y.role as Role) || x.email.localeCompare(y.email));
 }
 
-function ownerOnly(a: Admin) {
-  if (a.role !== 'owner') throw new HttpError(403, { error: 'owner_only' });
+// The role someone may hand out: a developer any role, an owner owner or staff.
+function grantable(a: Admin, v: unknown): Role {
+  const role: Role = isRole(v) ? v : 'staff';
+  if (role === 'developer' && a.role !== 'developer') throw new HttpError(403, { error: 'developer_only' });
+  return role;
 }
 
 export async function teamAction(a: Admin, action: string, body: unknown): Promise<Result> {
-  ownerOnly(a);
-  if (action === 'team-list') return { status: 200, body: { members: await members(), me: a.id } };
+  if (action === 'team-list') return { status: 200, body: { members: await members(), me: a.id, my_role: a.role } };
 
   if (action === 'team-invite') {
     const b = V.obj(body, ['email', 'role', 'name']);
     const email = V.email(b.email);
-    const role = b.role === 'owner' ? 'owner' : 'staff';
+    const role = grantable(a, b.role);
     const name = V.str(b.name, 'name', { max: 60, optional: true });
     const redirectTo = `${env.appUrl}/admin`;
     const { data, error } = await auth().generateLink({ type: 'invite', email, options: { data: { name }, redirectTo } });
@@ -66,11 +70,12 @@ export async function teamAction(a: Admin, action: string, body: unknown): Promi
   const team = await members();
   const target = team.find((m) => m.id === id);
   if (!target) throw new HttpError(404, { error: 'not_found' });
-  const owners = team.filter((m) => m.role === 'owner');
+  const developers = team.filter((m) => m.role === 'developer');
+  if (target.role === 'developer' && a.role !== 'developer') throw new HttpError(403, { error: 'developer_only' });
 
   if (action === 'team-remove') {
     if (id === a.id) throw new HttpError(409, { error: 'cannot_remove_yourself' });
-    if (target.role === 'owner' && owners.length <= 1) throw new HttpError(409, { error: 'last_owner' });
+    if (target.role === 'developer' && developers.length <= 1) throw new HttpError(409, { error: 'last_developer' });
     const { error } = await auth().deleteUser(id);
     if (error) throw new Error(error.message);
     await audit(a, 'admin.remove', id, { email: target.email, role: target.role });
@@ -78,8 +83,9 @@ export async function teamAction(a: Admin, action: string, body: unknown): Promi
   }
 
   if (action === 'team-role') {
-    const role = b.role === 'owner' ? 'owner' : 'staff';
-    if (target.role === 'owner' && role === 'staff' && owners.length <= 1) throw new HttpError(409, { error: 'last_owner' });
+    const role = grantable(a, b.role);
+    if (id === a.id) throw new HttpError(409, { error: 'cannot_change_your_own_role' });
+    if (target.role === 'developer' && role !== 'developer' && developers.length <= 1) throw new HttpError(409, { error: 'last_developer' });
     await auth().updateUserById(id, { app_metadata: { role } });
     await audit(a, 'admin.role', id, { email: target.email, role });
     return { status: 200, body: { ok: true } };

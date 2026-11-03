@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { adminPost } from './api';
-import { must, useQuery, useServices, useSettings, type ServiceRow, type Settings as S } from './shared';
+import { must, useQuery, useRole, useServices, useSettings, type ServiceRow, type Settings as S } from './shared';
+import { TECH_SETTINGS } from '../../shared/permissions';
 import { DOW_KEYS, formatDate } from '../../shared/time';
 import { LEVEL_LABEL } from '../../shared/rules';
 import { BlockForm, blockLabel, type Block } from './DayView';
@@ -325,6 +326,7 @@ function ReminderRules() {
 }
 
 export function Settings() {
+  const role = useRole();
   const s = useSettings();
   const services = useServices();
   if (!s.data) return <p className="loading">Loading…</p>;
@@ -344,7 +346,10 @@ export function Settings() {
       <Hours s={s.data} onSaved={s.reload} />
       <Closures />
       <TimeBlocks />
-      {SECTIONS.map((sec) => <SettingsSection key={sec.title} {...sec} s={s.data!} onSaved={s.reload} />)}
+      {SECTIONS.map((sec) => ({ ...sec, fields: sec.fields.filter((f) => role === 'developer' || !TECH_SETTINGS.has(f.k)) }))
+        .filter((sec) => sec.fields.length)
+        .map((sec) => <SettingsSection key={sec.title} {...sec} s={s.data!} onSaved={s.reload} />)}
+      {role !== 'developer' && <p className="muted small">Technical settings (timezone, sign-in timeout, sender address, alert emails, rate limits) are managed by the developer.</p>}
       <ReminderRules />
     </div>
   );

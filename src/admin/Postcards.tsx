@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { adminPost } from './api';
-import { must, useQuery, useSettings } from './shared';
+import { must, useQuery, useRole, useSettings } from './shared';
 import { formatDate } from '../../shared/time';
 
 function Preview({ html, size }: { html: string; size: string }) {
@@ -53,6 +53,7 @@ function Batch({ b, onDone }: { b: any; onDone: () => void }) {
 }
 
 export function Postcards() {
+  const role = useRole();
   const s = useSettings();
   const batches = useQuery(() => must(supabase.from('mail_batches').select('*').order('created_at', { ascending: false }).limit(20)) as Promise<any[]>);
   const [front, setFront] = useState('');
@@ -91,6 +92,8 @@ export function Postcards() {
       {draft.length === 0 && <p className="muted">No postcards waiting. The daily job adds service-due postcards here; {s.data.postcard_auto_approve ? 'auto-approve is ON.' : 'nothing mails until you approve.'}</p>}
       {draft.map((b) => <Batch key={b.id} b={b} onDone={batches.reload} />)}
 
+      {/* The postcard design is HTML: developer only (shared/permissions TECH_SETTINGS). */}
+      {role === 'developer' && (
       <div className="settings-section">
         <h2>Template</h2>
         <p className="help">
@@ -109,6 +112,7 @@ export function Postcards() {
         </div>
         <div className="row"><button className="btn primary" onClick={save}>Save template</button><button className="btn" onClick={() => { setFront(''); setBack(''); }}>Reset to default</button>{msg && <span className="muted">{msg}</span>}</div>
       </div>
+      )}
 
       {past.length > 0 && (
         <div className="settings-section">

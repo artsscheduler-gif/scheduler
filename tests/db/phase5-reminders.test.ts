@@ -111,7 +111,7 @@ describe('Phase 5: live reminders', () => {
 
     // Hal opts out of nothing new; Ben opts out of mail after batching: the opt-out still wins.
     await sql`update arts.customers set mail_opt_out = true where id = ${ids.Ben}`;
-    const { token } = await adminToken('staff');
+    const { token } = await adminToken('owner');
     const res = await adminAction(reqWith(token), 'batch-approve', { batch_id: batch.id });
     expect(res.body).toMatchObject({ sent: 0, undeliverable: 1, failed: 0 });
     const [kim] = await sql`select address_undeliverable from arts.customers where id = ${ids.Kim}`;

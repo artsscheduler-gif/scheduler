@@ -39,11 +39,11 @@ import { createClient as createAnonClient } from '@supabase/supabase-js';
 import * as OTPAuth from 'otpauth';
 
 // Creates (or reuses) an admin and returns an aal2 access token.
-export async function adminToken(role: 'owner' | 'staff' = 'staff', withMfa = true): Promise<{ token: string; userId: string }> {
+export async function adminToken(role: 'developer' | 'owner' | 'staff' = 'staff', withMfa = true): Promise<{ token: string; userId: string }> {
   const email = `${role}-${withMfa ? 'mfa' : 'nomfa'}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@example.com`;
   const password = 'test-password-123456';
   const { data: created, error } = await service.auth.admin.createUser({
-    email, password, email_confirm: true, app_metadata: { role }, user_metadata: { name: role === 'staff' ? 'Chris' : 'Jake' },
+    email, password, email_confirm: true, app_metadata: { role }, user_metadata: { name: { owner: 'Chris', developer: 'Jake', staff: 'Sam' }[role] },
   });
   if (error) throw error;
   const client = createAnonClient(process.env.SUPABASE_URL!, process.env.SUPABASE_ANON_KEY!, { auth: { persistSession: false } });

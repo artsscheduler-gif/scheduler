@@ -175,7 +175,7 @@ const outboxSince = new Date().toISOString();
 
 async function signInAdmin() {
   const password = `Smoke-${crypto.randomUUID()}`;
-  const { data, error } = await service.auth.admin.createUser({ email: adminEmail, password, email_confirm: true, app_metadata: { role: 'owner' }, user_metadata: { name: 'Smoke test' } });
+  const { data, error } = await service.auth.admin.createUser({ email: adminEmail, password, email_confirm: true, app_metadata: { role: 'developer' }, user_metadata: { name: 'Smoke test' } });
   if (error) throw error;
   adminId = data.user.id;
   const client = createClient(E.SUPABASE_URL!, ANON, { auth: { persistSession: false } });
