@@ -74,6 +74,30 @@ describe('capture provider', () => {
   });
 });
 
+describe('test site reset', () => {
+  it('clears bookings, customers and emails; keeps services and settings; staging only', async () => {
+    const day = await weekdayAhead(4);
+    await postBook({
+      service_ids: [await serviceId('Oil change')], customer_notes: '', date: day, kind: 'wait', start_time: '09:00',
+      name: 'Reset Me', email: 'reset@example.com', phone: '6105553009',
+      vehicle: { year: 2012, make: 'Ford', model: 'F-150', notes: '' }, turnstile: 'x',
+    }, '10.9.0.9');
+    await sql`insert into arts.time_blocks (weekday, start_time, end_time) values (2, '13:00', '14:00')`;
+    const services = (await sql`select count(*)::int c from arts.services`)[0].c;
+    const r = await adminAction(reqWith(jake), 'sim-reset-all', {});
+    expect(r.body).toMatchObject({ bookings: 1, customers: 1 });
+    const [left] = await sql`select (select count(*)::int from arts.bookings) b, (select count(*)::int from arts.customers) c, (select count(*)::int from arts.email_outbox) e, (select count(*)::int from arts.time_blocks) t, (select count(*)::int from arts.services) s`;
+    expect(left).toEqual({ b: 0, c: 0, e: 0, t: 0, s: services });
+    const prev = process.env.APP_ENV;
+    process.env.APP_ENV = '';
+    try {
+      await expect(adminAction(reqWith(jake), 'sim-reset-all', {})).rejects.toMatchObject({ status: 404 });
+    } finally {
+      process.env.APP_ENV = prev;
+    }
+  });
+});
+
 describe('simulator', () => {
   it('loads fake customers with history under @sim.invalid', async () => {
     const r = await act('sim-customers', { count: 40 });

@@ -164,7 +164,7 @@ const TABS: Topic[] = [
 const STAGING_TABS: Topic[] = [
   {
     id: 'tab-lab', title: 'Test lab', who: 'Owner and developer, test site only', min: 'owner',
-    body: <p>Play the customer and the shop at once. <b>Open customer phone</b> opens the booking page in a phone-sized window. Every email appears in the feed on the left (marked To customer / To Chris / To owner); links in an email open in the phone. The shop’s Day view is on the right. <b>Run</b> under Reminders runs the daily jobs for a date, to see reminder emails.</p>,
+    body: <p>Play the customer and the shop at once. <b>Open customer phone</b> opens the booking page in a phone-sized window. Every email appears in the feed on the left (marked To customer / To Chris / To owner); links in an email open in the phone. The shop’s Day view is on the right. <b>Run</b> under Reminders runs the daily jobs for a date, to see reminder emails. <b>Reset test site</b> clears every booking, customer and email for a clean start (services, hours, settings and logins stay).</p>,
   },
   {
     id: 'tab-outbox', title: 'Outbox', who: 'Owner and developer, test site only', min: 'owner',

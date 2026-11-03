@@ -65,6 +65,7 @@ export function Lab() {
   const [jobDate, setJobDate] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [resetMsg, setResetMsg] = useState('');
 
   useEffect(() => {
     let live = true;
@@ -90,6 +91,21 @@ export function Lab() {
     writeSince(now);
     setSince(now);
     setOpen(null);
+  }
+
+  async function resetAll() {
+    if (!confirm('Reset the test site? This deletes every booking, customer, car and captured email, and all blocked time. Services, hours, settings and logins stay.')) return;
+    setBusy(true);
+    setResetMsg('');
+    try {
+      const r = await adminPost<{ bookings: number; customers: number }>('sim-reset-all', {});
+      startFresh();
+      setResetMsg(`Test site reset: removed ${r.bookings} booking${r.bookings === 1 ? '' : 's'} and ${r.customers} customer${r.customers === 1 ? '' : 's'}.`);
+    } catch (e) {
+      setResetMsg(`Not reset: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function runJobs() {
@@ -120,6 +136,11 @@ export function Lab() {
           <li>Open the customer’s email and use its link to change or cancel. Chris gets the change request.</li>
           <li>Run the daily jobs for the day before the appointment to see the reminder.</li>
         </ol>
+        <div className="row wrap lab-reset">
+          <button className="btn small danger" disabled={busy} onClick={resetAll}>Reset test site</button>
+          <span className="muted small">Clears all bookings, customers and emails for a clean start. Keeps services, hours, settings and logins.</span>
+        </div>
+        {resetMsg && <p className="small" role="status">{resetMsg}</p>}
       </div>
 
       <div className="lab-grid">

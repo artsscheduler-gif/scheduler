@@ -249,6 +249,14 @@ async function reset(a: Admin): Promise<Result> {
   return { status: 200, body: { customers: ids.length } };
 }
 
+// Clean slate for testing: every booking, customer and captured email goes;
+// services, hours, settings and logins stay (arts.reset_test_data).
+async function resetAll(a: Admin): Promise<Result> {
+  const r = await rpc<{ bookings: number; customers: number }>('reset_test_data', {});
+  await audit(a, 'sim.reset_all', r);
+  return { status: 200, body: r };
+}
+
 async function clearOutbox(a: Admin): Promise<Result> {
   const { error } = await db().from('email_outbox').delete().not('id', 'is', null);
   if (error) throw new Error(`clear outbox: ${error.message}`);
@@ -265,6 +273,7 @@ export async function simulatorAction(a: Admin, action: string, body: unknown): 
     case 'sim-day': return day(a, body);
     case 'sim-tick': return tickNow(a);
     case 'sim-reset': return reset(a);
+    case 'sim-reset-all': return resetAll(a);
     case 'outbox-clear': return clearOutbox(a);
     default: throw new HttpError(404, { error: 'unknown_action' });
   }
