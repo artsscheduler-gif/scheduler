@@ -3,8 +3,8 @@
 //   staff     - day-to-day: requests, the schedule, customers, phone bookings
 //   owner     - runs the business (Chris): plus services, hours, settings,
 //               approvals, postcards, export/import and the team
-//   developer - maintains the system (Jake): plus technical settings, the
-//               launch checklist and the test tools. Only a developer can add,
+//   developer - maintains the system (Jake): plus technical settings and the
+//               launch checklist. Only a developer can add,
 //               change or remove a developer.
 export type Role = 'developer' | 'owner' | 'staff';
 export const ROLES: Role[] = ['developer', 'owner', 'staff'];
@@ -39,10 +39,12 @@ const ACTION_ROLE: Record<string, Role> = {
   forget: 'owner', settings: 'owner', service: 'owner', level: 'owner', closure: 'owner', rule: 'owner',
   export: 'owner', 'batch-approve': 'owner', 'workbook-apply': 'owner',
   'team-list': 'owner', 'team-invite': 'owner', 'team-remove': 'owner', 'team-role': 'owner', 'team-reset-mfa': 'owner',
-  'audit-item': 'developer', 'outbox-clear': 'developer',
+  // Test-site tools (only on staging): owners test there too.
+  'outbox-clear': 'owner',
+  'audit-item': 'developer',
 };
 
 export function minRoleFor(action: string): Role {
-  if (action.startsWith('sim-')) return 'developer';
+  if (action.startsWith('sim-')) return 'owner';
   return ACTION_ROLE[action] ?? 'developer';
 }

@@ -148,8 +148,8 @@ const TABS: Topic[] = [
         <p>Who can sign in, and what they can do:</p>
         <ul>
           <li><b>Staff</b>: requests, the schedule, customers, phone bookings, blocked time, activity.</li>
-          <li><b>Owner</b>: everything staff can, plus services, hours, closures, settings, approvals, postcards, export/import and the team.</li>
-          <li><b>Developer</b>: everything, including technical settings (timezone, sign-in timeout, sender address, alert emails, rate limits, postcard design code) and the test tools. Only a developer can add, change or remove a developer.</li>
+          <li><b>Owner</b>: everything staff can, plus services, hours, closures, settings, approvals, postcards, export/import, the team, and (on the test site) the test tools.</li>
+          <li><b>Developer</b>: everything, including technical settings (timezone, sign-in timeout, sender address, alert emails, rate limits, postcard design code) and the launch checklist. Only a developer can add, change or remove a developer.</li>
         </ul>
         <p><b>Send invite</b> emails a set-password link (and shows it so you can text it too). <b>Reset authenticator</b> is for a lost or new phone. <b>Remove</b> stops them signing in. You can’t change your own role or remove yourself.</p>
       </>
@@ -163,15 +163,15 @@ const TABS: Topic[] = [
 
 const STAGING_TABS: Topic[] = [
   {
-    id: 'tab-lab', title: 'Test lab', who: 'Developer, test site only', min: 'developer',
+    id: 'tab-lab', title: 'Test lab', who: 'Owner and developer, test site only', min: 'owner',
     body: <p>Play the customer and the shop at once. <b>Open customer phone</b> opens the booking page in a phone-sized window. Every email appears in the feed on the left (marked To customer / To Chris / To owner); links in an email open in the phone. The shop’s Day view is on the right. <b>Run</b> under Reminders runs the daily jobs for a date, to see reminder emails.</p>,
   },
   {
-    id: 'tab-outbox', title: 'Outbox', who: 'Developer, test site only', min: 'developer',
+    id: 'tab-outbox', title: 'Outbox', who: 'Owner and developer, test site only', min: 'owner',
     body: <p>Every email the test site would have sent, exactly as the recipient would see it. Nothing is delivered, except a [TEST] copy to artsscheduler@gmail.com.</p>,
   },
   {
-    id: 'tab-simulator', title: 'Simulator', who: 'Developer, test site only', min: 'developer',
+    id: 'tab-simulator', title: 'Simulator', who: 'Owner and developer, test site only', min: 'owner',
     body: <p>Fills the test site with fake customers (@sim.invalid addresses) and booking requests, and fast-forwards days to see reminders and postcards. <b>Reset simulated data</b> removes everything fake.</p>,
   },
 ];

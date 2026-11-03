@@ -284,7 +284,7 @@ describe('Roles', () => {
     // Owner: business settings yes, technical settings no.
     expect((await call('settings', { notes_max_length: 400 })).status).toBe(200);
     await expect(call('settings', { from_email: 'x@example.com' })).rejects.toMatchObject({ status: 403, body: { error: 'developer_only' } });
-    await expect(call('sim-status', {})).rejects.toMatchObject({ status: 403 });
+    await expect(call('audit-item', { id: '00000000-0000-0000-0000-000000000000', done: true })).rejects.toMatchObject({ status: 403 });
   });
 });
 

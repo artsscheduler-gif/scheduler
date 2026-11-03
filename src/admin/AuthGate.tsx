@@ -105,7 +105,8 @@ export function AuthGate({ children }: { children: (session: Session) => ReactNo
     // Clean up abandoned enrollments, then start a fresh one.
     for (const f of unverified) await supabase.auth.mfa.unenroll({ factorId: f.id });
     // A clear name in the authenticator app, so entries for different logins aren't mixed up.
-    const enroll = await supabase.auth.mfa.enroll({ factorType: 'totp', issuer: 'Art’s Servicenter', friendlyName: `Authenticator ${new Date().toISOString().slice(0, 10)}` });
+    // Plain letters only: some apps reject punctuation like an apostrophe in the issuer.
+    const enroll = await supabase.auth.mfa.enroll({ factorType: 'totp', issuer: 'Arts Servicenter', friendlyName: `Authenticator ${new Date().toISOString().slice(0, 10)}` });
     if (enroll.error) return setError(enroll.error.message);
     const next = { factorId: enroll.data.id, qr: enroll.data.totp.qr_code, secret: enroll.data.totp.secret, uri: enroll.data.totp.uri };
     writeEnroll(next);

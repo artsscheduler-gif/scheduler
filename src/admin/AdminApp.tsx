@@ -31,9 +31,9 @@ const NAV: { to: string; label: string; min: Role; staging?: boolean }[] = [
   { to: '/admin/export', label: 'Export', min: 'owner' },
   { to: '/admin/team', label: 'Team', min: 'owner' },
   { to: '/admin/checklist', label: 'Checklist', min: 'developer' },
-  { to: '/admin/lab', label: 'Test lab', min: 'developer', staging: true },
-  { to: '/admin/outbox', label: 'Outbox', min: 'developer', staging: true },
-  { to: '/admin/simulator', label: 'Simulator', min: 'developer', staging: true },
+  { to: '/admin/lab', label: 'Test lab', min: 'owner', staging: true },
+  { to: '/admin/outbox', label: 'Outbox', min: 'owner', staging: true },
+  { to: '/admin/simulator', label: 'Simulator', min: 'owner', staging: true },
   { to: '/admin/help', label: 'Help', min: 'staff' },
 ];
 
