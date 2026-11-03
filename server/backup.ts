@@ -6,7 +6,7 @@ import { db } from './db.js';
 import { env } from './env.js';
 
 export const BACKUP_TABLES = [
-  'shop_settings', 'closures', 'services', 'customers', 'vehicles', 'bookings', 'booking_services', 'service_history',
+  'shop_settings', 'closures', 'time_blocks', 'services', 'customers', 'vehicles', 'bookings', 'booking_services', 'service_history',
   'reminder_rules', 'mail_batches', 'reminder_sends', 'email_log', 'audit_log', 'job_runs',
 ] as const;
 const MAGIC = Buffer.from('ARTSBK1');

@@ -96,7 +96,11 @@ export function Lab() {
     setBusy(true);
     setMsg('');
     try {
-      const r = await adminPost('sim-day', { date: jobDate, live: true });
+      let r = await adminPost('sim-day', { date: jobDate, live: true });
+      for (let n = 0; r.more && n < 20; n++) {
+        const next = await adminPost('sim-day', { date: jobDate, live: true });
+        r = { ...next, emails: r.emails + next.emails, appointment_reminders: r.appointment_reminders + (next.appointment_reminders ?? 0) };
+      }
       setMsg(`Ran the daily jobs as of ${r.date}: ${r.emails} email${r.emails === 1 ? '' : 's'} (${r.appointment_reminders} appointment reminder${r.appointment_reminders === 1 ? '' : 's'}).`);
     } catch (e) {
       setMsg(String((e as Error).message));

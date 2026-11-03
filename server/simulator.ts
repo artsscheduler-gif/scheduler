@@ -8,7 +8,7 @@ import { env } from './env.js';
 import { HttpError, type Result } from './http.js';
 import type { Admin } from './admin.js';
 import * as V from './validate.js';
-import { daily, today } from './reminders.js';
+import { daily, today, JOB_BUDGET_MS } from './reminders.js';
 import { tick } from './jobs.js';
 import { notifyCreated } from './bookings.js';
 import { addDays, zonedTimeToUtc } from '../shared/time.js';
@@ -198,8 +198,9 @@ async function day(a: Admin, body: unknown): Promise<Result> {
   const s0 = await getSettings();
   const s = live ? { ...s0, reminders_dry_run: false } : s0;
   const started = new Date().toISOString();
-  const summary = await daily(s, zonedTimeToUtc(date, '12:00', s.timezone));
-  const esc = await tick(s, zonedTimeToUtc(date, '16:30', s.timezone));
+  // Same time budget as the real job; the client calls again while `more` is set.
+  const summary = await daily(s, zonedTimeToUtc(date, '12:00', s.timezone), Date.now() + JOB_BUDGET_MS);
+  const esc = summary.more ? {} : await tick(s, zonedTimeToUtc(date, '16:30', s.timezone));
   const { data: tagged } = await db().from('email_outbox').update({ sim_date: date }).is('sim_date', null).gte('created_at', started).select('id');
   await audit(a, 'sim.day', { date, live });
   return { status: 200, body: { date, ...summary, ...esc, emails: tagged?.length ?? 0 } };

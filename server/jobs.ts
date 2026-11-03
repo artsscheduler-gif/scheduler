@@ -8,8 +8,18 @@ import { formatPhone } from '../shared/phone.js';
 
 export interface JobSummary { [k: string]: number | string | boolean }
 
-// Records every run in job_runs; alerts Jake when a run throws.
+// A run still 'running' after this was cut off (platform time limit or crash).
+const STALE_RUN_MS = 15 * 60_000;
+
+// Records every run in job_runs; alerts Jake when a run throws, or when an
+// earlier run never finished (the platform kills it without running catch).
 export async function runJob(job: string, fn: (s: ShopSettings) => Promise<JobSummary>): Promise<{ ok: boolean; summary?: JobSummary; error?: string }> {
+  const { data: stale } = await db().from('job_runs')
+    .update({ status: 'failed', finished_at: new Date().toISOString(), error: 'Stopped before finishing (likely the 10-second function limit or a crash).' })
+    .eq('status', 'running').lt('started_at', new Date(Date.now() - STALE_RUN_MS).toISOString()).select('job, started_at');
+  if (stale?.length) {
+    await alertOwner(`${stale.length} scheduled run(s) didn’t finish`, stale.map((r) => `${r.job} started ${new Date(r.started_at).toISOString()} and never recorded a result.`)).catch(() => {});
+  }
   const { data: run } = await db().from('job_runs').insert({ job }).select('id').single();
   try {
     const s = await getSettings();
@@ -38,6 +48,17 @@ async function closures(): Promise<Closure[]> {
   return data ?? [];
 }
 
+// Marks an escalation as sent before sending, so overlapping runs can't both
+// send it; a failed send releases it and the next hourly run tries again.
+async function claim(id: string, field: 'escalated_staff_at' | 'escalated_owner_at', now: Date) {
+  const { data } = await db().from('bookings').update({ [field]: now.toISOString() }).eq('id', id).is(field, null).select('id');
+  return !!data?.length;
+}
+
+async function release(id: string, field: 'escalated_staff_at' | 'escalated_owner_at', now: Date) {
+  await db().from('bookings').update({ [field]: null }).eq('id', id).eq(field, now.toISOString());
+}
+
 // Hourly: chase unanswered requests. Holds never silently expire.
 export async function tick(s: ShopSettings, now = new Date()): Promise<JobSummary> {
   const cl = await closures();
@@ -63,8 +84,8 @@ export async function tick(s: ShopSettings, now = new Date()): Promise<JobSummar
       ['Vehicle', vehicleText(l.vehicle)],
       ['Waiting since', base.toLocaleString('en-US', { timeZone: s.timezone })],
     ];
-    if (needStaff) {
-      await sendEmail(s, {
+    if (needStaff && (await claim(b.id, 'escalated_staff_at', now))) {
+      const ok = await sendEmail(s, {
         kind: 'escalate_staff',
         to: s.staff_notify_email,
         ...T.staffEmail(s, {
@@ -75,12 +96,13 @@ export async function tick(s: ShopSettings, now = new Date()): Promise<JobSummar
           button: { label: 'Review in admin', url: `${env.appUrl}/admin` },
         }),
         bookingId: b.id,
+        idempotencyKey: `escalate-staff:${b.id}:${base.toISOString()}`,
       });
-      await db().from('bookings').update({ escalated_staff_at: now.toISOString() }).eq('id', b.id);
-      staff++;
+      if (ok) staff++;
+      else await release(b.id, 'escalated_staff_at', now);
     }
-    if (needOwner) {
-      await sendEmail(s, {
+    if (needOwner && (await claim(b.id, 'escalated_owner_at', now))) {
+      const ok = await sendEmail(s, {
         kind: 'escalate_owner',
         to: s.owner_alert_email,
         ...T.staffEmail(s, {
@@ -91,9 +113,10 @@ export async function tick(s: ShopSettings, now = new Date()): Promise<JobSummar
           button: { label: 'Open admin', url: `${env.appUrl}/admin` },
         }),
         bookingId: b.id,
+        idempotencyKey: `escalate-owner:${b.id}:${base.toISOString()}`,
       });
-      await db().from('bookings').update({ escalated_owner_at: now.toISOString() }).eq('id', b.id);
-      owner++;
+      if (ok) owner++;
+      else await release(b.id, 'escalated_owner_at', now);
     }
   }
   return { pending: pending?.length ?? 0, escalated_staff: staff, escalated_owner: owner };

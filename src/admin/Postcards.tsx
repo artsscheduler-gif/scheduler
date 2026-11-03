@@ -19,11 +19,11 @@ function Batch({ b, onDone }: { b: any; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   async function approve() {
-    if (!confirm(`Approve and mail ${b.count} postcard${b.count === 1 ? '' : 's'} (about $${(b.est_cost_cents / 100).toFixed(2)})?`)) return;
+    if (b.status === 'draft' && !confirm(`Approve and mail ${b.count} postcard${b.count === 1 ? '' : 's'} (about $${(b.est_cost_cents / 100).toFixed(2)})?`)) return;
     setBusy(true);
     try {
       const r = await adminPost('batch-approve', { batch_id: b.id });
-      setMsg(`Sent ${r.sent}. Undeliverable ${r.undeliverable}. Failed ${r.failed}.`);
+      setMsg(`Sent ${r.sent}. Undeliverable ${r.undeliverable}. Failed ${r.failed}.${r.remaining ? ` ${r.remaining} still to mail: click Continue sending.` : ''}`);
       onDone();
     } catch (e) {
       setMsg(String((e as Error).message));
@@ -37,6 +37,8 @@ function Batch({ b, onDone }: { b: any; onDone: () => void }) {
         <h3>Week of {formatDate(b.week_of, { month: 'short', day: 'numeric' })} · {b.status}</h3>
         <span className="push">{b.count} postcards · est. ${(b.est_cost_cents / 100).toFixed(2)}</span>
         {b.status === 'draft' && <button className="btn primary" disabled={busy || !b.count} onClick={approve}>Approve and send</button>}
+        {/* A big batch is mailed over several calls (10-second limit); it picks up where it stopped. */}
+        {b.status === 'approved' && <button className="btn primary" disabled={busy} onClick={approve}>{busy ? 'Sending…' : 'Continue sending'}</button>}
       </div>
       <table className="tbl">
         <tbody>
@@ -78,8 +80,8 @@ export function Postcards() {
   }
 
   if (!s.data) return <p className="loading">Loading…</p>;
-  const draft = batches.data?.filter((b) => b.status === 'draft') ?? [];
-  const past = batches.data?.filter((b) => b.status !== 'draft') ?? [];
+  const draft = batches.data?.filter((b) => b.status === 'draft' || b.status === 'approved') ?? [];
+  const past = batches.data?.filter((b) => b.status === 'sent') ?? [];
   return (
     <div className="settings">
       {s.data.reminders_dry_run && (

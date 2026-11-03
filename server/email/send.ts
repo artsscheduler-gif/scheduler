@@ -12,6 +12,7 @@ export interface SendOpts {
   customerId?: string;
   headers?: Record<string, string>;
   attachments?: EmailMessage['attachments'];
+  idempotencyKey?: string;
 }
 
 // Sends one transactional email with retries and logs the outcome. Never throws.
@@ -29,6 +30,7 @@ export async function sendEmail(settings: ShopSettings, o: SendOpts): Promise<bo
       replyTo: settings.from_email,
       headers: o.headers,
       attachments: o.attachments,
+      idempotencyKey: o.idempotencyKey,
     }),
     3,
     process.env.VITEST ? 1 : 400,

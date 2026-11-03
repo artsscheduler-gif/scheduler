@@ -55,7 +55,12 @@ export function Simulator() {
     const start = from || s!.today;
     let i = 0;
     for (; i < days && !stop.current; i++) {
-      const r = await adminPost<DayResult>('sim-day', { date: addDays(start, i), live });
+      // A busy day can take more than one call to finish (the 10-second limit).
+      let r = await adminPost<DayResult & { more?: boolean }>('sim-day', { date: addDays(start, i), live });
+      for (let n = 0; r.more && n < 20 && !stop.current; n++) {
+        const next = await adminPost<DayResult & { more?: boolean }>('sim-day', { date: addDays(start, i), live });
+        r = { ...next, emails: r.emails + next.emails, emailed: (r.emailed ?? 0) + (next.emailed ?? 0) } as typeof r;
+      }
       setLog((l) => [...l, r]);
     }
     return `${stop.current ? 'Stopped after' : 'Ran'} ${i} day${i === 1 ? '' : 's'}. Open the Outbox to read the emails and Postcards for batches.`;

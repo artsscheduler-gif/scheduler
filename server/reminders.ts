@@ -12,11 +12,11 @@ import { sendEmail } from './email/send.js';
 import { emailProvider } from './email/provider.js';
 import { withRetry } from './retry.js';
 import * as T from './email/templates.js';
-import { unsubscribeUrl } from './tokens.js';
+import { oneClickUnsubscribeUrl, unsubscribeUrl } from './tokens.js';
 import { mailProvider, type Address } from './mail/provider.js';
 import { renderPostcard, trackedBookingUrl } from './postcard.js';
 import { loadBooking, manageLink, toView, vehicleText } from './bookings.js';
-import { addDays } from '../shared/time.js';
+import { addDays, localParts } from '../shared/time.js';
 
 interface Rule { id: string; step: number; channel: 'email' | 'postcard'; offset_days: number; condition: 'no_booking_since_due' | 'no_booking_since_previous_step'; active: boolean }
 interface Customer {
@@ -49,13 +49,47 @@ function shopAddress(s: ShopSettings): Address {
   return { name: s.shop_name, line1: m[1], city: m[2], state: m[3], zip: m[4] };
 }
 
+// PostgREST returns at most 1,000 rows per call, so every list here is read
+// a page at a time (with a stable order), and long id lists go in chunks.
+const PAGE = 1000;
+const ID_CHUNK = 150;
+
+async function allRows<T>(make: () => any): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await make().range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    out.push(...((data ?? []) as T[]));
+    if (!data || data.length < PAGE) return out;
+  }
+}
+
+async function byIds<T>(ids: string[], make: (chunk: string[]) => any): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < ids.length; i += ID_CHUNK) out.push(...(await allRows<T>(() => make(ids.slice(i, i + ID_CHUNK)))));
+  return out;
+}
+
 // The due list, limited to items where some reminder step could apply today.
 export async function dueList(s: ShopSettings, on: string, rules: Rule[]): Promise<DueItem[]> {
-  const rows = await rpc<DueItem[]>('due_list', {});
   const minOffset = Math.min(0, ...rules.map((r) => r.offset_days));
   const latest = addDays(on, -minOffset); // due dates up to here have a step on or before today
   const earliest = addDays(on, -s.reminder_max_overdue_days);
-  return rows.filter((r) => r.due_date <= latest && r.due_date >= earliest);
+  return allRows<DueItem>(() => db().rpc('due_list', { p_from: earliest, p_to: latest }));
+}
+
+const SUPERSEDED = 'superseded by a later step';
+// A claimed send that never finished (the run was cut off) is retried after this.
+const CLAIM_STALE_MS = 30 * 60_000;
+interface PriorSend { step: number; status: string; created_at: string; error: string | null; claimed_at: string | null }
+
+// A step counts as done once it went out (or was batched/undeliverable), is
+// in flight right now, or was deliberately superseded. Dry runs and "no
+// email on file" skips are not done: they fire for real once that changes.
+function stepDone(p: PriorSend, now = Date.now()) {
+  if (['sent', 'batched', 'undeliverable'].includes(p.status)) return true;
+  if (p.status === 'queued') return !!p.claimed_at && now - Date.parse(p.claimed_at) < CLAIM_STALE_MS;
+  return p.status === 'skipped' && p.error === SUPERSEDED;
 }
 
 type StepPlan = { item: DueItem; rule: Rule; action: 'send' | 'skip'; reason?: string };
@@ -69,18 +103,22 @@ export async function planServiceReminders(s: ShopSettings, on: string): Promise
   if (!items.length) return [];
 
   const customerIds = [...new Set(items.map((i) => i.customer_id))];
-  const [{ data: sends }, { data: bookings }] = await Promise.all([
-    db().from('reminder_sends').select('customer_id, vehicle_id, service_id, due_date, step, status, created_at').in('customer_id', customerIds),
-    db().from('bookings').select('customer_id, created_at, status').in('customer_id', customerIds).in('status', ['requested', 'confirmed', 'completed']),
+  const [sends, bookings] = await Promise.all([
+    byIds<PriorSend & { customer_id: string; vehicle_id: string | null; service_id: string; due_date: string }>(customerIds, (ids) => db().from('reminder_sends')
+      .select('id, customer_id, vehicle_id, service_id, due_date, step, status, created_at, error, claimed_at').in('customer_id', ids).order('id')),
+    byIds<{ customer_id: string; created_at: string }>(customerIds, (ids) => db().from('bookings')
+      .select('id, customer_id, created_at').in('customer_id', ids).in('status', ['requested', 'confirmed', 'completed']).order('id')),
   ]);
 
   const key = (i: { customer_id: string; vehicle_id: string | null; service_id: string; due_date: string }) => `${i.customer_id}|${i.vehicle_id ?? ''}|${i.service_id}|${i.due_date}`;
-  const sentByKey = new Map<string, { step: number; status: string; created_at: string }[]>();
-  for (const r of sends ?? []) {
+  const sentByKey = new Map<string, PriorSend[]>();
+  for (const r of sends) {
     const k = key(r);
     sentByKey.set(k, [...(sentByKey.get(k) ?? []), r]);
   }
-  const bookedAt = (customer: string) => (bookings ?? []).filter((b) => b.customer_id === customer).map((b) => b.created_at.slice(0, 10));
+  const bookedBy = new Map<string, string[]>();
+  for (const b of bookings) bookedBy.set(b.customer_id, [...(bookedBy.get(b.customer_id) ?? []), b.created_at.slice(0, 10)]);
+  const bookedAt = (customer: string) => bookedBy.get(customer) ?? [];
 
   const plan: StepPlan[] = [];
   for (const item of items) {
@@ -91,17 +129,16 @@ export async function planServiceReminders(s: ShopSettings, on: string): Promise
 
     for (let i = 0; i < rules.length; i++) {
       const rule = rules[i];
-      const done = prior.find((p) => p.step === rule.step && p.status !== 'failed');
-      if (done) continue;
+      if (prior.some((p) => p.step === rule.step && stepDone(p))) continue;
       const sendOn = addDays(item.due_date, rule.offset_days);
       if (sendOn > on) break;
       // Catching up (e.g. first run after import): only the latest step that's due fires.
       const next = rules[i + 1];
       if (next && addDays(item.due_date, next.offset_days) <= on) {
-        plan.push({ item, rule, action: 'skip', reason: 'superseded by a later step' });
+        plan.push({ item, rule, action: 'skip', reason: SUPERSEDED });
         continue;
       }
-      const prev = [...prior].filter((p) => p.step < rule.step && ['sent', 'batched', 'dry_run'].includes(p.status)).sort((a, b) => b.step - a.step)[0];
+      const prev = [...prior].filter((p) => p.step < rule.step && ['sent', 'batched', 'dry_run', 'queued'].includes(p.status)).sort((a, b) => b.step - a.step)[0];
       const since = rule.condition === 'no_booking_since_due' ? item.due_date : prev?.created_at.slice(0, 10) ?? item.due_date;
       if (booked.some((d) => d >= since)) break;
       plan.push({ item, rule, action: 'send' });
@@ -124,23 +161,53 @@ async function refreshBatch(s: ShopSettings, batchId: string) {
   await db().from('mail_batches').update({ count: count ?? 0, est_cost_cents: (count ?? 0) * s.postcard_cost_cents }).eq('id', batchId);
 }
 
-export async function runServiceReminders(s: ShopSettings, on: string) {
+// Claims one reminder step for sending: inserts (or re-opens) its row as
+// 'queued' first, so an overlapping run sees it taken and moves on. Returns
+// the row id and attempt number (part of the email's idempotency key), or
+// null if another run has it.
+async function claimStep(base: Record<string, unknown> & { customer_id: string; service_id: string; due_date: string; step: number; vehicle_id: string | null }) {
+  const now = new Date().toISOString();
+  let q = db().from('reminder_sends').select('id, status, attempts, claimed_at')
+    .eq('customer_id', base.customer_id).eq('service_id', base.service_id).eq('due_date', base.due_date).eq('step', base.step);
+  q = base.vehicle_id ? q.eq('vehicle_id', base.vehicle_id) : q.is('vehicle_id', null);
+  const row = (await q.maybeSingle()).data as { id: string; status: string; attempts: number; claimed_at: string | null } | null;
+  if (!row) {
+    const { data, error } = await db().from('reminder_sends').insert({ ...base, status: 'queued', claimed_at: now, attempts: 1 }).select('id').single();
+    if (error) return null; // unique index: another run claimed it first
+    return { id: data.id as string, attempt: 1 };
+  }
+  if (row.status === 'queued' && row.claimed_at && Date.now() - Date.parse(row.claimed_at) < CLAIM_STALE_MS) return null;
+  // A stale claim may have been sent before the run was cut off: keep its
+  // attempt number so the idempotency key matches and the provider drops a repeat.
+  const attempt = row.status === 'queued' ? row.attempts : row.attempts + 1;
+  let u = db().from('reminder_sends').update({ status: 'queued', claimed_at: now, attempts: attempt, error: null }).eq('id', row.id).eq('status', row.status);
+  u = row.claimed_at ? u.eq('claimed_at', row.claimed_at) : u.is('claimed_at', null);
+  const { data } = await u.select('id');
+  return data?.length ? { id: row.id, attempt } : null;
+}
+
+export async function runServiceReminders(s: ShopSettings, on: string, deadline = Infinity) {
   const plan = await planServiceReminders(s, on);
-  const out = { due_steps: plan.length, emailed: 0, batched: 0, skipped: 0, dry_run: 0, failed: 0 };
+  const out = { due_steps: plan.length, emailed: 0, batched: 0, skipped: 0, dry_run: 0, failed: 0, more: false };
   if (!plan.length) return out;
 
   const customerIds = [...new Set(plan.map((p) => p.item.customer_id))];
-  const [{ data: custs }, { data: svcs }, { data: vehicles }] = await Promise.all([
-    db().from('customers').select('*').in('id', customerIds),
+  const [custs, { data: svcs }, vehicles] = await Promise.all([
+    byIds<Customer>(customerIds, (ids) => db().from('customers').select('*').in('id', ids).order('id')),
     db().from('services').select('id, name'),
-    db().from('vehicles').select('id, year, make, model').in('customer_id', customerIds),
+    byIds<{ id: string; year: number | null; make: string | null; model: string | null }>(customerIds, (ids) => db().from('vehicles').select('id, year, make, model').in('customer_id', ids).order('id')),
   ]);
-  const cust = new Map((custs as Customer[]).map((c) => [c.id, c]));
+  const cust = new Map(custs.map((c) => [c.id, c]));
   const svcName = new Map((svcs ?? []).map((x) => [x.id, x.name as string]));
-  const veh = new Map((vehicles ?? []).map((v) => [v.id, vehicleText(v)]));
+  const veh = new Map(vehicles.map((v) => [v.id, vehicleText(v)]));
   let batchId: string | null = null;
 
   for (const p of plan) {
+    // Stop cleanly before the platform's time limit; the hourly job finishes the rest.
+    if (Date.now() > deadline) {
+      out.more = true;
+      break;
+    }
     const c = cust.get(p.item.customer_id)!;
     const base = {
       customer_id: c.id, vehicle_id: p.item.vehicle_id, service_id: p.item.service_id, due_date: p.item.due_date,
@@ -187,20 +254,22 @@ export async function runServiceReminders(s: ShopSettings, on: string) {
         bookUrl: (() => { const u = new URL(s.booking_url); u.searchParams.set('src', `email-step${p.rule.step}`); return u.toString(); })(),
         unsubscribeUrl: unsubscribeUrl(c.id),
       });
-      const unsub = unsubscribeUrl(c.id);
+      const claim = await claimStep(base);
+      if (!claim) continue; // another run is sending this one
       const provider = emailProvider();
       const res = await withRetry(() => provider.send({
         kind: `service_due_step${p.rule.step}`,
         to: c.email!, from: `${s.from_name} <${s.from_email}>`, replyTo: s.from_email, ...r,
-        headers: { 'List-Unsubscribe': `<${unsub}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
+        // One-click unsubscribe (RFC 8058): mail apps POST to this API URL.
+        headers: { 'List-Unsubscribe': `<${oneClickUnsubscribeUrl(c.id)}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
+        idempotencyKey: `reminder:${claim.id}:${claim.attempt}`,
       }), 3, process.env.VITEST ? 1 : 500);
-      if (res.error) {
-        await record('failed', { error: res.error.message.slice(0, 500), attempts: res.tries });
-        out.failed++;
-      } else {
-        await record('sent', { provider_id: res.value!.id, cost_cents: res.value!.costCents, sent_at: new Date().toISOString(), attempts: res.tries });
-        out.emailed++;
-      }
+      const done = res.error
+        ? { status: 'failed', error: res.error.message.slice(0, 500) }
+        : { status: 'sent', provider_id: res.value!.id, cost_cents: res.value!.costCents, sent_at: new Date().toISOString() };
+      await db().from('reminder_sends').update(done).eq('id', claim.id);
+      if (res.error) out.failed++;
+      else out.emailed++;
     } else {
       batchId ??= await draftBatch(on);
       await record('batched', { batch_id: batchId });
@@ -213,25 +282,36 @@ export async function runServiceReminders(s: ShopSettings, on: string) {
 
 // ---- Appointment reminders & digest ------------------------------------------
 
-export async function runAppointmentReminders(s: ShopSettings, on: string) {
+export async function runAppointmentReminders(s: ShopSettings, on: string, deadline = Infinity) {
   const until = addDays(on, Math.ceil(s.appointment_reminder_hours / 24));
-  const { data } = await db().from('bookings').select('id').eq('status', 'confirmed').is('reminder_sent_at', null).gt('date', on).lte('date', until);
+  const rows = await allRows<{ id: string }>(() => db().from('bookings').select('id').eq('status', 'confirmed').is('reminder_sent_at', null).gt('date', on).lte('date', until).order('id'));
   let sent = 0;
   let failed = 0;
-  for (const { id } of data ?? []) {
+  let more = false;
+  for (const { id } of rows) {
+    if (Date.now() > deadline) { more = true; break; }
     const l = await loadBooking(id);
     if (!l?.customer.email) continue;
-    const ok = await sendEmail(s, { kind: 'appointment_reminder', to: l.customer.email, ...T.appointmentReminderEmail(s, toView(l), manageLink(s, l.booking)), bookingId: id, customerId: l.customer.id });
-    if (ok) {
-      await db().from('bookings').update({ reminder_sent_at: new Date().toISOString() }).eq('id', id);
-      sent++;
-    } else failed++;
+    // Claim first (an overlapping run skips it); release the claim if the send fails.
+    const { data: claimed } = await db().from('bookings').update({ reminder_sent_at: new Date().toISOString() }).eq('id', id).is('reminder_sent_at', null).select('id');
+    if (!claimed?.length) continue;
+    const ok = await sendEmail(s, {
+      kind: 'appointment_reminder', to: l.customer.email, ...T.appointmentReminderEmail(s, toView(l), manageLink(s, l.booking)),
+      bookingId: id, customerId: l.customer.id, idempotencyKey: `appt-reminder:${id}:${l.booking.date}`,
+    });
+    if (ok) sent++;
+    else {
+      await db().from('bookings').update({ reminder_sent_at: null }).eq('id', id);
+      failed++;
+    }
   }
-  return { appointment_reminders: sent, appointment_failed: failed };
+  return { appointment_reminders: sent, appointment_failed: failed, appointment_more: more };
 }
 
 export async function runDigest(s: ShopSettings) {
-  const { data } = await db().from('bookings').select('id').eq('auto_confirmed', true).eq('approval_level', 'digest').is('digest_sent_at', null).neq('status', 'replaced');
+  // Claim the rows first so an overlapping run can't send a second digest.
+  const stamp = new Date().toISOString();
+  const { data } = await db().from('bookings').update({ digest_sent_at: stamp }).eq('auto_confirmed', true).eq('approval_level', 'digest').is('digest_sent_at', null).neq('status', 'replaced').select('id');
   if (!data?.length) return { digest: 0 };
   const rows: [string, string][] = [];
   for (const { id } of data) {
@@ -248,25 +328,31 @@ export async function runDigest(s: ShopSettings) {
       details: rows,
       button: { label: 'Open admin', url: `${env.appUrl}/admin` },
     }),
+    idempotencyKey: `digest:${stamp}`,
   });
-  if (ok) await db().from('bookings').update({ digest_sent_at: new Date().toISOString() }).in('id', data.map((d) => d.id));
+  if (!ok) await db().from('bookings').update({ digest_sent_at: null }).in('id', data.map((d) => d.id)).eq('digest_sent_at', stamp);
   return { digest: rows.length };
 }
 
 // ---- Postcard batches -------------------------------------------------------
 
-export async function sendBatch(s: ShopSettings, batchId: string, approvedBy: string | null) {
+// Mails a batch. Resumable: it stops before the time limit with the batch
+// left 'approved', and the next call (or the daily job) carries on. Each card
+// has an idempotency key, so a repeat never mails twice.
+export async function sendBatch(s: ShopSettings, batchId: string, approvedBy: string | null, deadline = Date.now() + 7000) {
   const { data: batch } = await db().from('mail_batches').select('*').eq('id', batchId).single();
   if (!batch || batch.status === 'sent') throw new HttpError(409, { error: 'batch_not_open' });
-  await db().from('mail_batches').update({ status: 'approved', approved_by: approvedBy, approved_at: new Date().toISOString() }).eq('id', batchId);
+  if (batch.status === 'draft') await db().from('mail_batches').update({ status: 'approved', approved_by: approvedBy, approved_at: new Date().toISOString() }).eq('id', batchId);
 
-  const { data: sends } = await db().from('reminder_sends').select('id, customer_id, vehicle_id, service_id, due_date, customers(*), services(name), vehicles(year, make, model)').eq('batch_id', batchId).eq('status', 'batched');
+  const sends = await allRows<any>(() => db().from('reminder_sends').select('id, customer_id, vehicle_id, service_id, due_date, customers(*), services(name), vehicles(year, make, model)').eq('batch_id', batchId).eq('status', 'batched').order('id'));
   const mp = mailProvider();
   const from = shopAddress(s);
   let sent = 0;
   let undeliverable = 0;
   let failed = 0;
-  for (const r of (sends ?? []) as any[]) {
+  let remaining = 0;
+  for (const r of sends) {
+    if (Date.now() > deadline) { remaining++; continue; }
     const c = r.customers as Customer;
     // Opt-outs recorded after batching still win.
     if (c.mail_opt_out || c.address_undeliverable || !hasAddress(c)) {
@@ -292,8 +378,11 @@ export async function sendBatch(s: ShopSettings, batchId: string, approvedBy: st
       failed++;
     }
   }
-  await db().from('mail_batches').update({ status: 'sent', sent_at: new Date().toISOString(), count: sent }).eq('id', batchId);
-  return { sent, undeliverable, failed };
+  if (!remaining) {
+    const { count } = await db().from('reminder_sends').select('id', { count: 'exact', head: true }).eq('batch_id', batchId).eq('status', 'sent');
+    await db().from('mail_batches').update({ status: 'sent', sent_at: new Date().toISOString(), count: count ?? sent }).eq('id', batchId);
+  }
+  return { sent, undeliverable, failed, remaining };
 }
 
 export async function approveBatch(a: Admin, body: unknown): Promise<Result> {
@@ -321,20 +410,33 @@ export async function postcardPreview(body: unknown): Promise<Result> {
 
 // ---- Daily job --------------------------------------------------------------
 
-export async function daily(s: ShopSettings, now = new Date()): Promise<JobSummary> {
-  const on = today(s, now);
-  const service = await runServiceReminders(s, on);
-  const appt = await runAppointmentReminders(s, on);
-  const digest = await runDigest(s);
+// Vercel Hobby stops a function at 10 seconds; leave room to record the run.
+export const JOB_BUDGET_MS = 7000;
 
+// The sending part of the daily job. Safe to repeat: every send is claimed
+// first, so the hourly job can call it again to finish what's left.
+async function dailyWork(s: ShopSettings, on: string, deadline: number) {
+  const service = await runServiceReminders(s, on, deadline);
+  const appt = await runAppointmentReminders(s, on, deadline);
   let autoBatches = 0;
+  let batchesMore = false;
   if (s.postcard_auto_approve && !s.reminders_dry_run) {
-    const { data } = await db().from('mail_batches').select('id').eq('status', 'draft').lt('week_of', mondayOf(on));
+    const { data } = await db().from('mail_batches').select('id, status').in('status', ['draft', 'approved']).lt('week_of', mondayOf(on));
     for (const b of data ?? []) {
-      await sendBatch(s, b.id, null);
+      if (Date.now() > deadline) { batchesMore = true; break; }
+      if (b.status === 'approved' && !(await db().from('reminder_sends').select('id', { count: 'exact', head: true }).eq('batch_id', b.id).eq('status', 'batched')).count) continue;
+      const r = await sendBatch(s, b.id, null, deadline);
+      if (r.remaining) batchesMore = true;
       autoBatches++;
     }
   }
+  return { service, appt, autoBatches, more: service.more || appt.appointment_more || batchesMore };
+}
+
+export async function daily(s: ShopSettings, now = new Date(), deadline = Infinity): Promise<JobSummary> {
+  const on = today(s, now);
+  const { service, appt, autoBatches, more } = await dailyWork(s, on, deadline);
+  const digest = await runDigest(s);
 
   const attempts = service.emailed + service.failed + appt.appointment_reminders + appt.appointment_failed;
   const failures = service.failed + appt.appointment_failed;
@@ -345,5 +447,17 @@ export async function daily(s: ShopSettings, now = new Date()): Promise<JobSumma
       'Check the Activity page and the email provider dashboard.',
     ]);
   }
-  return { ...service, ...appt, ...digest, auto_batches: autoBatches, failure_pct: Math.round(failurePct * 10) / 10 };
+  return { ...service, ...appt, ...digest, auto_batches: autoBatches, failure_pct: Math.round(failurePct * 10) / 10, more };
+}
+
+// Run from the hourly job: if today's daily run stopped early (more work than
+// fits in one run), carry on during shop hours until it's all sent.
+export async function continueDaily(s: ShopSettings, now = new Date(), deadline = Infinity): Promise<JobSummary> {
+  const local = localParts(now, s.timezone);
+  if (local.minutes < 8 * 60 || local.minutes >= 18 * 60) return {};
+  const { data: last } = await db().from('job_runs').select('id, started_at, summary').eq('job', 'daily').order('started_at', { ascending: false }).limit(1).maybeSingle();
+  if (!last || today(s, new Date(last.started_at)) !== local.date || !(last.summary as JobSummary)?.more) return {};
+  const r = await dailyWork(s, local.date, deadline);
+  if (!r.more) await db().from('job_runs').update({ summary: { ...(last.summary as JobSummary), more: false, finished_by_tick: true } }).eq('id', last.id);
+  return { continued_emails: r.service.emailed + r.appt.appointment_reminders, continued_more: r.more };
 }

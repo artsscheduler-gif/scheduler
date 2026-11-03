@@ -11,6 +11,8 @@ export interface EmailMessage {
   replyTo?: string;
   headers?: Record<string, string>;
   attachments?: { filename: string; content: string; contentType: string }[];
+  // Same key = same email: the provider drops a repeat (e.g. a retry after a lost response).
+  idempotencyKey?: string;
 }
 
 export interface SendResult { id: string; costCents: number }
@@ -29,7 +31,10 @@ export class ResendProvider implements EmailProvider {
   async send(msg: EmailMessage): Promise<SendResult> {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${this.key}`, 'Content-Type': 'application/json' },
+      headers: {
+        Authorization: `Bearer ${this.key}`, 'Content-Type': 'application/json',
+        ...(msg.idempotencyKey ? { 'Idempotency-Key': msg.idempotencyKey.slice(0, 256) } : {}),
+      },
       body: JSON.stringify({
         from: msg.from,
         to: [msg.to],
@@ -97,7 +102,7 @@ export class CaptureEmailProvider implements EmailProvider {
     if (error) throw new Error(`capture: ${error.message}`);
     if (this.deliver.via && this.deliver.to.includes(msg.to.toLowerCase())) {
       // Failure here is recorded on the outbox row, never retried: the capture already succeeded.
-      const delivered = await this.deliver.via.send({ ...msg, from: this.deliver.from, subject: `[TEST] ${msg.subject}` })
+      const delivered = await this.deliver.via.send({ ...msg, from: this.deliver.from, subject: `[TEST] ${msg.subject}`, idempotencyKey: msg.idempotencyKey && `test:${msg.idempotencyKey}` })
         .then((r) => `sent:${r.id}`, (e: Error) => `failed:${e.message.slice(0, 200)}`);
       await db().from('email_outbox').update({ delivered }).eq('id', data.id);
     }

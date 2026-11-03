@@ -48,3 +48,9 @@ export function manageUrl(rootId: string, appointmentAt: Date): string {
 export function unsubscribeUrl(customerId: string): string {
   return `${env.appUrl}/unsubscribe?t=${signToken({ p: 'unsub', c: customerId })}`;
 }
+
+// For the List-Unsubscribe header: mail apps POST here directly (one click,
+// no page), and a plain visit redirects to the unsubscribe page.
+export function oneClickUnsubscribeUrl(customerId: string): string {
+  return `${env.appUrl}/api/unsubscribe?t=${signToken({ p: 'unsub', c: customerId })}`;
+}
