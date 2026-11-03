@@ -100,7 +100,7 @@ Full detail in `SETUP_LOG.md`. In short:
 ## Manual items for Jake
 
 1. ~~**Add the Claude Code permissions file yourself.**~~ **Done 2026-11-02.** `.claude/settings.json` is committed with the 10 rules the runbook asked for.
-2. **Sign in as owner.** Open the one-time link Claude saved (expires about an hour after it was made; ask for a new one if it lapses). Set a password (12+ characters), then scan the QR code with an authenticator app. Then try **Simulator** and **Outbox**: 60 test emails from the smoke run are waiting there.
+2. ~~**Sign in as owner.**~~ **Done 2026-11-02.** Password set and authenticator verified. Setup first failed because a page reload replaced the pending authenticator secret; fixed in `553dc04`.
 3. **Still to fill in `.env.staging.local`:**
    - Real Turnstile keys: Cloudflare → Turnstile → Add widget, hostname `arts-staging.vercel.app` (plus `arts.jvtestspace.com` later). They replace the `1x0000…` test keys.
    - `STAFF_ADMIN_EMAIL`: Chris's email address, not his name.

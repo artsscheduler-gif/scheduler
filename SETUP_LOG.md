@@ -167,3 +167,16 @@ No keys yet. Used Cloudflare's published always-pass **test** keys (`1x0000…`)
 12. **Two deploys.** The `*.vercel.app` URL isn't known until the first deploy, and `APP_URL` goes into every email link, so I deployed, set `APP_URL`, and deployed again.
 13. **Owner link via `recovery`, not `invite`.** The account already existed (decision 8), and the admin page's set-password screen accepts both link types.
 14. **The sign-in link is kept outside the repo** in the session scratchpad, not in a gitignored repo file, so it can't end up in a commit or a push.
+
+## After the run: owner sign-in
+
+- Jake set his password from the one-time link, but every authenticator code was rejected.
+- Cause: each admin page load deleted the pending TOTP factor and enrolled a new one, so a QR scanned before a reload stopped matching. The QR was also shown smaller than its native size with no quiet zone.
+- Fixed in `553dc04`:
+  - the pending enrollment is kept in sessionStorage for the tab;
+  - the QR is shown at its native size with a white margin;
+  - an `otpauth://` link is added for same-phone setup;
+  - Supabase's error text is shown.
+  - A new e2e assertion checks that a reload keeps the same secret.
+- After the fix, codes still failed. Checking the server's stored secret against a code from Jake's screenshot showed the code matched no time within ±24h. His app was reading an entry left over from an earlier attempt. He deleted the old entries, re-added it, and the owner's factor is now verified (02:01 UTC).
+- The setup key appeared in a screenshot in the chat. Offered to reset the factor.
