@@ -1,13 +1,13 @@
 # Staging setup report
 
-**Run 2: 2026-11-02 (evening). Result: Supabase done, not deployed.** Phase 1 passed on the staging Supabase project (`fdblmu…`). Phases 2–6 are waiting on the Vercel and Turnstile values. Run 1 (earlier the same day) had no values at all; its details are in `SETUP_LOG.md`.
+**Run 2: 2026-11-02 (evening). Result: staging is live; smoke test 15 passed, 0 failed, 1 skipped.** It runs on Cloudflare's Turnstile test keys and the Lob stub until the real keys are in. Run 1 (earlier the same day) had no values at all; its details are in `SETUP_LOG.md`.
 
 | | |
 |---|---|
-| STAGING_URL | none yet (no deploy) |
-| Admin URL | none yet (will be `STAGING_URL/admin`) |
+| STAGING_URL | **https://arts-staging.vercel.app** |
+| Admin URL | https://arts-staging.vercel.app/admin (owner: `artssc…`; Chris not yet invited) |
 | Test suite | **105 passed** / 105 (runbook expected 93: +10 Outbox/Simulator tests on 2026-11-02, +2 this run) |
-| Commits | Run 1: `e0a5a1d`, `26d8001`, `d3d0fa1`, `1c2ea0c`. Run 2: `a9be704` Phase 1, this report. Nothing pushed. |
+| Commits | Run 1: `e0a5a1d`, `26d8001`, `d3d0fa1`, `1c2ea0c`. Run 2: `a9be704` Phase 1, `1cbbae8` report, Phases 2–6 log, this report. Nothing pushed. |
 
 ## Checks
 
@@ -24,19 +24,43 @@
 | 1 | RLS forced on all 16 tables; anon key blocked from 16 tables / 19 functions | PASS |
 | 1 | Sign-ups off, TOTP on, `arts` exposed to the API | PASS |
 | 1 | 12h session time-box | **BLOCKED**: needs Supabase Pro (manual item 4) |
-| 1 | Site URL / redirects | DEFERRED until there's a staging URL |
-| 1 | Owner admin | PASS: created with owner role, no email sent; sign-in link after deploy |
+| 1 | Site URL / redirects | PASS: set to the staging URL after Phase 2 |
+| 1 | Owner admin | PASS: created with owner role, no email sent; one-time sign-in link generated after deploy |
 | 1 | Staff admin | **SKIPPED**: no email for Chris |
-| 2 | Vercel link, env vars, staging flags, deploy | **SKIPPED**: no Vercel values |
-| 2.4 | Outbox and Simulator need a logged-in admin | PASS (code + tests): 401 with no session, 403 without TOTP, 404 unless `APP_ENV=staging`; outbox table unreadable by anon |
-| 2.5 | Daily cron configured; endpoint rejects missing secret | PASS (locally): `vercel.json` cron 13:00 UTC; 401 without or with a wrong secret |
-| 3 | Domain attached, resolves, valid cert | **SKIPPED**: no deploy |
-| 4 | Turnstile widget loads at STAGING_URL | **SKIPPED** on staging. Locally: widget renders and issues a token (test key) |
-| 5 | Lob test postcard | **SKIPPED**: no key; stub provider will be used |
-| 6 | Smoke test against STAGING_URL | **SKIPPED** on staging. Script written; local staging run below |
+| 2 | Project `arts-staging` created and linked; 15 production env vars; staging flags on | PASS |
+| 2 | Production deploy | PASS: READY at `arts-staging.vercel.app`. Non-fatal TS2688 type warnings in the build log |
+| 2 | Hourly tick from pg_cron | PASS: scheduled; one manual run returned 200 |
+| 2.4 | Outbox and Simulator need a logged-in admin | PASS on staging: admin API 401, outbox anon read 401 (plus the 403/404 tests locally) |
+| 2.5 | Daily cron configured; endpoint rejects missing secret | PASS on staging: 401 / 401 |
+| 3 | Domain attached | SKIPPED (not attached yet): using `arts-staging.vercel.app` |
+| 4 | Turnstile widget loads at STAGING_URL | PASS with Cloudflare **test** keys. Real keys still needed |
+| 5 | Lob test postcard | SKIPPED: no key; stub provider in use |
+| 6 | Smoke test against STAGING_URL | **PASS: 15 passed, 0 failed, 1 skipped** (below) |
 | 7 | This report | done |
 
-### Smoke test, local staging dev servers (`npm run smoke:staging -- --env .env.local --url http://localhost:5173`)
+### Smoke test, live staging (`npm run smoke:staging -- --url https://arts-staging.vercel.app`)
+
+```
+PASS  1. Homepage and booking page load  6 services listed
+PASS  2. Security headers (CSP, HSTS, frame denial on /admin)
+PASS  3. Availability returns dates/times only  43 open days
+SKIP  4. Booking without a valid Turnstile token is rejected  Cloudflare test secret (1x…) accepts every token by design
+PASS  4b. Turnstile widget loads on the booking form  widget rendered, token issued (test key)
+PASS  5. /admin shows sign-in when not authenticated  sign-in form shown; admin API 401; outbox anon read HTTP 401
+PASS  6. Cron endpoint rejects requests without the secret  HTTP 401 / 401
+PASS  7. Health endpoint: database and providers reachable
+PASS  8a. Test admin signs in with TOTP; simulator enabled  today 2026-11-02, dry-run true
+PASS  8b. Load fake customers  40 customers, 101 service records
+PASS  8c. Book one appointment; it lands as requested in the approval queue  2026-11-04 07:30 via public /api/book
+PASS  8d. Approve it; confirmation email appears in the Outbox
+PASS  8e. Cancel through the manage link; capacity is released  07:30 on 2026-11-04 filled, then reopened
+PASS  8f. Fast-forward: due reminders reach the Outbox  51 reminder emails over 14 days; 23 postcards batched (stub provider)
+PASS  9. Anon key cannot read or write any table or call any function  16 tables, 19 functions denied
+PASS  Cleanup: simulated data and the test admin removed  captured emails left in the Outbox for review
+15 passed, 0 failed, 1 skipped.
+```
+
+### Smoke test, local staging dev servers (run 1, `npm run smoke:staging -- --env .env.local --url http://localhost:5173`)
 
 ```
 PASS  1. Homepage and booking page load
@@ -76,23 +100,25 @@ Full detail in `SETUP_LOG.md`. In short:
 ## Manual items for Jake
 
 1. ~~**Add the Claude Code permissions file yourself.**~~ **Done 2026-11-02.** `.claude/settings.json` is committed with the 10 rules the runbook asked for.
-2. **Finish `.env.staging.local`.** Supabase is done. Still needed:
-   - `VERCEL_TOKEN`, `VERCEL_SCOPE` (team slug from `vercel.com/<slug>`), `VERCEL_PROJECT`
-   - both Turnstile keys
-   - `STAFF_ADMIN_EMAIL`: Chris's email address, not his name
-3. **Decide GitHub visibility before pushing.** `artsscheduler-gif/scheduler` is **public**. The code has no secrets (gitleaks clean), but DECISIONS.md and the README describe the shop's operations and security setup. To make it private: github.com/artsscheduler-gif/scheduler → Settings → General → Danger Zone → Change visibility. Then push with `git push -u origin main` (the runbook doesn't push).
-4. **Supabase project plan:** a free project pauses after a week without activity, and the 12-hour session time-box (Authentication → Sessions) needs a paid plan. If the next run can't set the time-box, it stays a manual item; the admin UI enforces 12 hours on its own either way.
-5. **Staging domain (optional):**
+2. **Sign in as owner.** Open the one-time link Claude saved (expires about an hour after it was made; ask for a new one if it lapses). Set a password (12+ characters), then scan the QR code with an authenticator app. Then try **Simulator** and **Outbox**: 60 test emails from the smoke run are waiting there.
+3. **Still to fill in `.env.staging.local`:**
+   - Real Turnstile keys: Cloudflare → Turnstile → Add widget, hostname `arts-staging.vercel.app` (plus `arts.jvtestspace.com` later). They replace the `1x0000…` test keys.
+   - `STAFF_ADMIN_EMAIL`: Chris's email address, not his name.
+   Then say "check" and Claude updates Vercel, redeploys, invites Chris and re-runs the smoke test.
+4. **Decide GitHub visibility before pushing.** `artsscheduler-gif/scheduler` is **public**. The code has no secrets (gitleaks clean), but DECISIONS.md and the README describe the shop's operations and security setup. To make it private: github.com/artsscheduler-gif/scheduler → Settings → General → Danger Zone → Change visibility. Then push with `git push -u origin main` (the runbook doesn't push).
+5. **Supabase project plan:** a free project pauses after a week without activity, and the 12-hour session time-box (Authentication → Sessions) needs a paid plan. If the next run can't set the time-box, it stays a manual item; the admin UI enforces 12 hours on its own either way.
+6. **Staging domain (optional):**
    - Vercel → artsscheduler team → the project → Settings → Domains → Add `arts.jvtestspace.com`.
    - Then at GoDaddy (jvtestspace.com → DNS), add the CNAME `arts` → the target Vercel shows (normally `cname.vercel-dns.com`).
    - Add the `_vercel` TXT verification record too if Vercel asks for one; it will, because jvtestspace.com is already on your personal Vercel account.
    - Then set `STAGING_DOMAIN=arts.jvtestspace.com`. Without it, staging runs on the `*.vercel.app` URL.
-6. **Turnstile hostnames:** Cloudflare → Turnstile → your widget → Settings → Hostname Management. Add every host staging will use: `arts.jvtestspace.com` and the project's `<project>.vercel.app` (shown after the first deploy).
-7. **Lob (optional):** Lob dashboard → Settings → API Keys → Test Environment → copy the `test_…` key into `LOB_API_KEY`. Never paste a `live_…` key.
-8. **Vercel plan:** if the artsscheduler team is on Hobby, it's fine for staging but not for the production business site (Hobby is non-commercial).
-9. **Move `arts_tokens and passwords.rtf` out of the repo folder** (into a password manager is best). It's ignored locally so it can't be committed, but it shouldn't live next to code that gets pushed.
-10. **Rotate the secrets that were pasted into the chat** once staging works:
+7. **Turnstile hostnames:** Cloudflare → Turnstile → your widget → Settings → Hostname Management. Add every host staging will use: `arts.jvtestspace.com` and the project's `<project>.vercel.app` (shown after the first deploy).
+8. **Lob (optional):** Lob dashboard → Settings → API Keys → Test Environment → copy the `test_…` key into `LOB_API_KEY`. Never paste a `live_…` key.
+9. **Vercel plan:** if the artsscheduler team is on Hobby, it's fine for staging but not for the production business site (Hobby is non-commercial).
+10. **Move `arts_tokens and passwords.rtf` out of the repo folder** (into a password manager is best). It's ignored locally so it can't be committed, but it shouldn't live next to code that gets pushed.
+11. **Rotate the secrets that were pasted into the chat** once staging works:
     - Supabase access token: Account → Access Tokens, delete `sbp_fc…` and make a new one.
     - Secret key: Project Settings → API Keys, roll `sb_sec…`.
     - Database password: Project Settings → Database → Reset.
-    Then update `.env.staging.local` (and Vercel's env vars, for the secret key).
+    - Vercel token: Account Settings → Tokens, delete `vcp_4L…` and create a new one.
+    Then update `.env.staging.local` (and Vercel's `SUPABASE_SERVICE_ROLE_KEY`, then redeploy).

@@ -123,3 +123,47 @@ A file named `arts_tokens and passwords.rtf` sits in the repo folder and isn't c
 8. **Owner created with `createUser`, not an invite.** An invite link expires and would point at `localhost` until there's a staging URL. Creating the account now and generating a link later sends no email and avoids a dead link.
 9. **New-style Supabase keys** (`sb_publishable_…`, `sb_secret_…`) are used as-is. supabase-js accepts them. User sessions are still JWTs, so the server's `aal2` check is unchanged. `check-bundle-secrets` already flags `sb_secret_`.
 10. **Secrets pasted into the chat.** Jake pasted the env file contents, including the access token, secret key and DB password, into the Claude conversation. Recommended rotating all three after staging is up (manual item).
+
+## Phase 2: Vercel (team `arts-service-center`, project `arts-staging`)
+
+`VERCEL_TOKEN` (`vcp_4L…`), `VERCEL_SCOPE` and `VERCEL_PROJECT` were pasted into the chat rather than saved, so I wrote them into `.env.staging.local`.
+
+| Step | Result |
+|---|---|
+| Token and team | PASS: token sees exactly one team, `arts-service-center`, which had no projects. |
+| Link | PASS: `vercel link` created and linked `arts-staging` (`.vercel/` is gitignored). The CLI also appended a `VERCEL_OIDC_TOKEN` line to `.env.local` and `.env*` to `.gitignore`; both reverted (the ignore rule already existed). |
+| Generated secrets | PASS: `TOKEN_SECRET`, `CRON_SECRET`, `BACKUP_ENCRYPTION_KEY` (32 random bytes each) written to `.env.staging.local`. |
+| Env vars (Production) | PASS, 15 set: `SUPABASE_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, the three secrets, both Turnstile keys, `VITE_SHOP_PHONE` (seed placeholder), `APP_URL`, `APP_ENV=staging`, `VITE_APP_ENV=staging`, `EMAIL_PROVIDER=capture`, `MAIL_PROVIDER=stub`. Secrets are stored as Vercel "Secret" type. |
+| Deploy | PASS: production deploy READY, aliased to **https://arts-staging.vercel.app**. Redeployed once after `APP_URL` was known. The build log shows `TS2688: Cannot find type definition file for 'node' / 'vite/client'` from Vercel's function type check; non-fatal, functions work (logged, not fixed). |
+| Supabase site URL / redirects | PASS: `site_url` = `https://arts-staging.vercel.app/admin`, allow list `https://arts-staging.vercel.app/**`. |
+| Outbox and Simulator need an admin | PASS on staging: admin API 401 and outbox anon read 401 (smoke check 5). |
+| Daily cron | PASS: `vercel.json` cron registered; endpoint returns 401 without the secret (smoke check 6). |
+| Hourly tick (pg_cron) | PASS: `pg_cron` + `pg_net` enabled; job `arts-tick` at `5 * * * *` posts to `/api/cron/tick`. Triggered once by hand: HTTP 200, `{"ok":true,...}`. |
+| Owner sign-in link | PASS: `generateLink({type:'recovery'})` to `/admin`; **no email sent**. Saved outside the repo in the Claude scratchpad (`owner-signin-link.txt`); single use, expires about an hour after creation. |
+
+## Phase 3: Domain
+
+`STAGING_DOMAIN` blank, so `STAGING_URL=https://arts-staging.vercel.app`. No domain or DNS operations were run.
+
+## Phase 4: Turnstile
+
+No keys yet. Used Cloudflare's published always-pass **test** keys (`1x0000…`). The widget renders and issues a token on staging (smoke 4b). Check 4 (reject a bad token) is SKIP until the real keys go in.
+
+## Phase 5: Lob
+
+`LOB_API_KEY` blank, so `MAIL_PROVIDER=stub`. Postcard batches are created but nothing is sent to Lob. No test postcard PDF.
+
+## Phase 6: Smoke test on staging
+
+`npm run smoke:staging -- --env .env.staging.local --url https://arts-staging.vercel.app`: **15 passed, 0 failed, 1 skipped** (check 4, test Turnstile secret). Afterwards:
+
+- `auth.users` holds only the owner (the temporary smoke admin was deleted).
+- 0 simulated customers remain.
+- 60 captured emails stay in the Outbox for review. 55 went to `@sim.invalid` addresses and 5 to the configured staff/owner alert addresses: `chris@example.com` (seed placeholder) and `jakevig@gmail.com` (the `owner_alert_email` default). All were captured; the capture provider sends nothing.
+
+## Decisions (run 2, continued)
+
+11. **Turnstile test keys** let Phases 4 and 6 run without the real widget. They accept every token, so they must be replaced before anyone outside tests staging.
+12. **Two deploys.** The `*.vercel.app` URL isn't known until the first deploy, and `APP_URL` goes into every email link, so I deployed, set `APP_URL`, and deployed again.
+13. **Owner link via `recovery`, not `invite`.** The account already existed (decision 8), and the admin page's set-password screen accepts both link types.
+14. **The sign-in link is kept outside the repo** in the session scratchpad, not in a gitignored repo file, so it can't end up in a commit or a push.
