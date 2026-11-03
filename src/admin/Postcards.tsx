@@ -15,7 +15,7 @@ function Preview({ html, size }: { html: string; size: string }) {
 }
 
 function Batch({ b, onDone }: { b: any; onDone: () => void }) {
-  const rows = useQuery(() => must(supabase.from('reminder_sends').select('id, status, due_date, customers(name, city, state, mail_opt_out), services(name)').eq('batch_id', b.id).order('created_at')) as Promise<any[]>, [b.id]);
+  const rows = useQuery(() => must(supabase.from('reminder_sends').select('id, status, due_date, preview_url, customers(name, city, state, mail_opt_out), services(name)').eq('batch_id', b.id).order('created_at')) as Promise<any[]>, [b.id]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   async function approve() {
@@ -43,11 +43,54 @@ function Batch({ b, onDone }: { b: any; onDone: () => void }) {
       <table className="tbl">
         <tbody>
           {rows.data?.map((r) => (
-            <tr key={r.id}><td>{r.customers?.name}</td><td>{r.customers?.city}, {r.customers?.state}</td><td>{r.services?.name} due {r.due_date}</td><td>{r.status}{r.customers?.mail_opt_out ? ' (opted out; will be skipped)' : ''}</td></tr>
+            <tr key={r.id}><td>{r.customers?.name}</td><td>{r.customers?.city}, {r.customers?.state}</td><td>{r.services?.name} due {r.due_date}</td><td>{r.status}{r.customers?.mail_opt_out ? ' (opted out; will be skipped)' : ''}{r.preview_url && <> · <a href={r.preview_url} target="_blank" rel="noreferrer">View card</a></>}</td></tr>
           ))}
         </tbody>
       </table>
       {msg && <p className="muted">{msg}</p>}
+    </div>
+  );
+}
+
+const MODE_TEXT = {
+  stub: 'Postcards are not connected to a printer: approving a batch marks it sent, but nothing is made or mailed. To connect Lob, add LOB_API_KEY and set MAIL_PROVIDER=lob in Vercel.',
+  'lob-test': 'Connected to Lob with a test key: Lob makes each card (see “View card”) but nothing is printed or mailed, and nothing is charged.',
+  'lob-live': 'Connected to Lob with a live key: approved cards are printed and mailed, and each one costs money.',
+} as const;
+
+// Which printer is connected, and a one-card test to the shop's own address.
+function PrinterCheck() {
+  const role = useRole();
+  const status = useQuery(() => adminPost<{ mode: keyof typeof MODE_TEXT }>('postcard-status', {}));
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ id: string; preview_url: string | null; mode: string } | null>(null);
+  const [err, setErr] = useState('');
+  const mode = status.data?.mode;
+  async function test() {
+    if (mode === 'lob-live' && !confirm('This prints and mails one real postcard to the shop’s own address, and costs money. Send it?')) return;
+    setBusy(true);
+    setErr('');
+    setResult(null);
+    try {
+      setResult(await adminPost('postcard-test', {}));
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (!mode) return null;
+  return (
+    <div className={`settings-section printer-${mode}`}>
+      <h2>Printer</h2>
+      <p>{MODE_TEXT[mode]}</p>
+      {role !== 'staff' && <button className="btn small" disabled={busy} onClick={test}>{busy ? 'Sending…' : 'Send a test postcard to the shop'}</button>}
+      {result && (
+        <p className="small" role="status">
+          {result.mode === 'stub' ? 'Test card made (not connected to a printer, so nothing was sent).' : <>Lob accepted the card ({result.id}).{result.preview_url && <> <a href={result.preview_url} target="_blank" rel="noreferrer">View card (PDF)</a></>}</>}
+        </p>
+      )}
+      {err && <p className="error small" role="alert">Lob said: {err}</p>}
     </div>
   );
 }
@@ -88,6 +131,7 @@ export function Postcards() {
       {s.data.reminders_dry_run && (
         <div className="banner">Reminders are in <strong>dry-run</strong> mode (cutover). Nothing is emailed or batched; the daily job only logs what it would send. Turn it off in Settings when Epicor stops sending.</div>
       )}
+      <PrinterCheck />
       <h2>Next batch</h2>
       {draft.length === 0 && <p className="muted">No postcards waiting. The daily job adds service-due postcards here; {s.data.postcard_auto_approve ? 'auto-approve is ON.' : 'nothing mails until you approve.'}</p>}
       {draft.map((b) => <Batch key={b.id} b={b} onDone={batches.reload} />)}

@@ -135,7 +135,10 @@ describe('Phase 5: live reminders', () => {
     const job = StubMailProvider.sent[0];
     expect(job.to).toMatchObject({ name: 'Lou Person', zip: '18042' });
     expect(job.from).toMatchObject({ line1: '123 Example St', city: 'Easton', state: 'PA' });
-    expect(job.back).toContain('data:image/png;base64,');
+    // Printed cards link to the QR image (a personal booking link for this customer).
+    const qr = decodeURIComponent(job.back.match(/\/api\/qr\?d=([^"&]+)/)![1]);
+    expect(new URL(qr).searchParams.get('src')).toBe('postcard');
+    expect(new URL(qr).searchParams.get('k')).toBeTruthy();
     expect(job.front).toContain('oil change');
     const [b] = await sql`select status from arts.mail_batches where id = ${batch.id}`;
     expect(b.status).toBe('sent');

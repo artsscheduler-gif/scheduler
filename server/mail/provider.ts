@@ -38,7 +38,14 @@ export class LobProvider implements MailProvider {
     return { Authorization: `Basic ${Buffer.from(`${this.key}:`).toString('base64')}`, 'Content-Type': 'application/json', ...extra };
   }
 
+  // A test_ key's address check returns made-up answers; don't let them mark
+  // real customers undeliverable.
+  get testMode() {
+    return this.key.startsWith('test_');
+  }
+
   async verify(a: Address) {
+    if (this.testMode) return { deliverable: true, detail: 'not checked (Lob test key)' };
     const res = await fetch('https://api.lob.com/v1/us_verifications', {
       method: 'POST',
       headers: this.headers(),

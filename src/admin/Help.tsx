@@ -110,7 +110,7 @@ const TABS: Topic[] = [
   },
   {
     id: 'tab-postcards', who: 'Owner and developer', min: 'owner', title: 'Postcards',
-    body: <p>Service-due reminder postcards collect here each week. Review the batch and click <b>Approve and send</b> to mail them (each postcard costs money). A big batch may stop partway; click <b>Continue sending</b> to finish it (nothing is mailed twice). <b>Template</b> edits the front and back design. <b>Past batches</b> shows what was mailed.</p>,
+    body: <p>Service-due reminder postcards collect here each week. Review the batch and click <b>Approve and send</b> to mail them (each postcard costs money). A big batch may stop partway; click <b>Continue sending</b> to finish it (nothing is mailed twice). <b>Printer</b> at the top shows whether postcards go to Lob (test or live) and has <b>Send a test postcard to the shop</b>; with Lob, each card gets a <b>View card</b> link to the printer’s proof. <b>Template</b> edits the front and back design. <b>Past batches</b> shows what was mailed.</p>,
   },
   {
     id: 'tab-settings', who: 'Owner and developer', min: 'owner', title: 'Settings',
