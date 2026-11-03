@@ -6,12 +6,34 @@ type Stage =
   | { kind: 'loading' }
   | { kind: 'signin' }
   | { kind: 'set-password' }
-  | { kind: 'enroll'; factorId: string; qr: string; secret: string }
+  | { kind: 'enroll'; factorId: string; qr: string; secret: string; uri: string }
   | { kind: 'challenge'; factorId: string }
   | { kind: 'denied' }
   | { kind: 'ready'; session: Session };
 
 const LOGIN_AT_KEY = 'arts.admin.verifiedAt';
+// The TOTP secret is only returned at enroll time, so keep it for this tab.
+// Otherwise a reload would start a new enrollment and the QR the admin already
+// scanned would stop matching.
+const ENROLL_KEY = 'arts.admin.pendingEnroll';
+type PendingEnroll = { factorId: string; qr: string; secret: string; uri: string };
+
+function readEnroll(): PendingEnroll | null {
+  try {
+    return JSON.parse(sessionStorage.getItem(ENROLL_KEY) ?? 'null');
+  } catch {
+    return null;
+  }
+}
+
+function writeEnroll(v: PendingEnroll | null) {
+  try {
+    if (v === null) sessionStorage.removeItem(ENROLL_KEY);
+    else sessionStorage.setItem(ENROLL_KEY, JSON.stringify(v));
+  } catch {
+    // Storage blocked: a reload starts a fresh enrollment.
+  }
+}
 
 function readLoginAt(): number {
   try {
@@ -32,6 +54,7 @@ function writeLoginAt(v: number | null) {
 
 export async function signOut() {
   writeLoginAt(null);
+  writeEnroll(null);
   await supabase.auth.signOut();
 }
 
@@ -67,13 +90,18 @@ export function AuthGate({ children }: { children: (session: Session) => ReactNo
     const totp = factors.data?.totp.find((f) => f.status === 'verified');
     if (totp) return setStage({ kind: 'challenge', factorId: totp.id });
 
+    // Resume this tab's enrollment if it's still pending, so the QR stays the same.
+    const pending = readEnroll();
+    const unverified = (factors.data?.all ?? []).filter((f) => f.status !== 'verified');
+    if (pending && unverified.some((f) => f.id === pending.factorId)) return setStage({ kind: 'enroll', ...pending });
+
     // Clean up abandoned enrollments, then start a fresh one.
-    for (const f of factors.data?.all ?? []) {
-      if (f.status !== 'verified') await supabase.auth.mfa.unenroll({ factorId: f.id });
-    }
+    for (const f of unverified) await supabase.auth.mfa.unenroll({ factorId: f.id });
     const enroll = await supabase.auth.mfa.enroll({ factorType: 'totp', friendlyName: `Authenticator ${new Date().toISOString().slice(0, 10)}` });
     if (enroll.error) return setError(enroll.error.message);
-    setStage({ kind: 'enroll', factorId: enroll.data.id, qr: enroll.data.totp.qr_code, secret: enroll.data.totp.secret });
+    const next = { factorId: enroll.data.id, qr: enroll.data.totp.qr_code, secret: enroll.data.totp.secret, uri: enroll.data.totp.uri };
+    writeEnroll(next);
+    setStage({ kind: 'enroll', ...next });
   }
 
   useEffect(() => {
@@ -113,7 +141,8 @@ export function AuthGate({ children }: { children: (session: Session) => ReactNo
     e.preventDefault();
     const code = String(new FormData(e.currentTarget).get('code')).replace(/\s/g, '');
     const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId, code });
-    if (error) return setError('That code didn’t work. Codes change every 30 seconds — try the current one.');
+    if (error) return setError(`That code didn’t work (${error.message}). Codes change every 30 seconds — try the current one.`);
+    writeEnroll(null);
     writeLoginAt(Date.now());
     resolve();
   }
@@ -143,7 +172,8 @@ export function AuthGate({ children }: { children: (session: Session) => ReactNo
         {stage.kind === 'enroll' && (
           <form onSubmit={(e) => onCode(e, stage.factorId)}>
             <p>Two-step sign-in is required. Scan this with an authenticator app (Google Authenticator, 1Password, Authy), then enter the 6-digit code.</p>
-            <img className="qr" src={stage.qr} alt="Authenticator QR code" width={180} height={180} />
+            <img className="qr" src={stage.qr} alt="Authenticator QR code" width={231} height={231} />
+            <p className="muted small">On this phone? <a href={stage.uri}>Add to authenticator app</a>.</p>
             <p className="muted small">Can’t scan? Enter this key: <code>{stage.secret}</code></p>
             <label>6-digit code<input name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" required /></label>
             <button className="btn primary">Verify</button>

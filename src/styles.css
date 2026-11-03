@@ -188,7 +188,7 @@ button.day.on { background: var(--brand); color: #fff; border-color: var(--brand
 .auth-card label { display: block; font-weight: 600; margin-bottom: 14px; }
 .auth-card input { display: block; width: 100%; margin-top: 6px; font: inherit; padding: 10px 12px; border: 1.5px solid var(--line-strong); border-radius: 8px; }
 .auth-card .btn { width: 100%; min-height: 46px; }
-.qr { display: block; margin: 8px auto; background: #fff; }
+.qr { display: block; margin: 8px auto; padding: 16px; box-sizing: content-box; background: #fff; border-radius: 4px; max-width: calc(100% - 32px); height: auto; }
 .admin-loading { padding: 40px; color: var(--muted); }
 
 /* ---------- Admin (desktop first, dense) ---------- */

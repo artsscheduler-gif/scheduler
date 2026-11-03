@@ -45,6 +45,9 @@ describe.skipIf(!up)('Phase 4: admin console', () => {
     await page.getByRole('button', { name: 'Sign in' }).click();
     const secret = await page.locator('code').innerText();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-0-mfa.png` });
+    // A reload mid-enrollment must keep the same secret, or the scanned QR stops working.
+    await page.reload();
+    expect(await page.locator('code').innerText()).toBe(secret);
     const code = new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(secret) }).generate();
     await page.getByLabel('6-digit code').fill(code);
     await page.getByRole('button', { name: 'Verify' }).click();
