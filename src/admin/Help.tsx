@@ -50,6 +50,10 @@ const TASKS: Topic[] = [
     body: <p>On <b>Day</b>, type a name, phone number or email into <b>Find a booking</b> at the top. Click a result to jump to that day with the booking open.</p>,
   },
   {
+    id: 'task-excel', title: 'Update services or settings in Excel',
+    body: <p><b>Export → Download workbook</b>, edit the blue tabs in Excel, save, then <b>Export → Upload changes</b>. Check the list of changes it shows, then click <b>Save</b>.</p>,
+  },
+  {
     id: 'task-print', title: 'Print the day’s schedule',
     body: <p>On <b>Day</b>, go to the date and click <b>Print day</b>. You get a plain list: time, wait or drop-off, customer, phone, vehicle, services and notes.</p>,
   },
@@ -129,7 +133,13 @@ const TABS: Topic[] = [
   },
   {
     id: 'tab-export', who: 'Owner and developer', min: 'owner', title: 'Export',
-    body: <p>Download customers, vehicles, service history, bookings, or services as a spreadsheet (CSV). Contains customer personal information: store it carefully.</p>,
+    body: (
+      <>
+        <p><b>Download workbook</b> gives you everything as one Excel file. Blue tabs (Services, Hours, Closures, Blocked time, Reminder steps, Settings) can be edited; grey tabs (Customers, Vehicles, Service history, Bookings) are for reference and analysis.</p>
+        <p>To make changes in Excel: edit the blue tabs, save, then <b>Upload changes</b>. You’ll see every change before anything is saved. Keep the id column as it is; add a row (with no id) for something new; delete a row to remove a closure or blocked time, or to turn off a service or reminder step. Tabs left out of the file are left alone.</p>
+        <p>The file contains customer personal information: store it carefully.</p>
+      </>
+    ),
   },
   {
     id: 'tab-team', title: 'Team', who: 'Owner and developer', min: 'owner',

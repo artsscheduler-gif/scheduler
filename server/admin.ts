@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { db, getSettings, rpc } from './db.js';
 import { env } from './env.js';
 import { teamAction } from './team.js';
+import { workbookApply } from './workbook.js';
 import { atLeast, isRole, minRoleFor, TECH_SETTINGS, type Role } from '../shared/permissions.js';
 import { HttpError, type Req, type Result } from './http.js';
 import * as V from './validate.js';
@@ -300,7 +301,12 @@ function parseHours(v: unknown) {
   return out;
 }
 
-async function updateSettings(a: Admin, body: unknown): Promise<Result> {
+export const SETTINGS_KEYS = () => Object.keys(SETTINGS_FIELDS);
+export const settingType = (k: string) => SETTINGS_FIELDS[k];
+
+// Validates a settings change (bounds, formats, rules between fields) without
+// saving it. Returns the cleaned patch and the current row.
+export async function checkSettings(a: Admin, body: unknown) {
   const b = V.obj(body, Object.keys(SETTINGS_FIELDS), 'settings');
   const tech = Object.keys(b).filter((k) => TECH_SETTINGS.has(k));
   if (tech.length && a.role !== 'developer') throw new HttpError(403, { error: 'developer_only', fields: tech });
@@ -323,6 +329,11 @@ async function updateSettings(a: Admin, body: unknown): Promise<Result> {
   if (m.waiter_lanes > m.total_lanes) throw new V.ValidationError('waiter_lanes', 'can’t be more than total lanes');
   if (String(m.dropoff_window_end).slice(0, 5) <= String(m.dropoff_window_start).slice(0, 5)) throw new V.ValidationError('dropoff_window_end', 'must be after the earliest drop-off time');
   if (m.floor_days > m.max_days_ahead) throw new V.ValidationError('floor_days', 'can’t be later than the latest online booking day');
+  return { patch, before: before as Record<string, unknown> };
+}
+
+export async function updateSettings(a: Admin, body: unknown): Promise<Result> {
+  const { patch, before } = await checkSettings(a, body);
   const { data: after, error } = await db().from('shop_settings').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', 1).select('*').single();
   if (error) throw new V.ValidationError('settings', error.message);
   const changedBefore = Object.fromEntries(Object.keys(patch).map((k) => [k, (before as any)[k]]));
@@ -330,7 +341,8 @@ async function updateSettings(a: Admin, body: unknown): Promise<Result> {
   return { status: 200, body: after };
 }
 
-async function upsertService(a: Admin, body: unknown): Promise<Result> {
+// Validates one service without saving it.
+export function checkService(body: unknown) {
   const b = V.obj(body, ['id', 'name', 'description', 'duration_minutes', 'wait_eligible', 'daily_cap', 'lead_days', 'reminder_interval_months', 'sort_order', 'active', 'epicor_codes']);
   const row: Record<string, unknown> = {
     name: V.str(b.name, 'name', { max: 60 }),
@@ -344,6 +356,11 @@ async function upsertService(a: Admin, body: unknown): Promise<Result> {
     active: b.active === undefined ? true : V.bool(b.active, 'active'),
   };
   if (Array.isArray(b.epicor_codes)) row.epicor_codes = b.epicor_codes.map((c, i) => V.str(c, `epicor_codes[${i}]`, { max: 40 }));
+  return { b, row };
+}
+
+export async function upsertService(a: Admin, body: unknown): Promise<Result> {
+  const { b, row } = checkService(body);
   if (b.id) {
     const id = V.uuid(b.id, 'id');
     const { data: before } = await db().from('services').select('*').eq('id', id).single();
@@ -366,7 +383,15 @@ async function setLevel(a: Admin, body: unknown): Promise<Result> {
   return { status: 200, body: after };
 }
 
-async function closure(a: Admin, body: unknown): Promise<Result> {
+export function checkClosure(body: unknown) {
+  const b = V.obj(body, ['id', 'start_date', 'end_date', 'reason', 'delete']);
+  const start = V.date(b.start_date, 'start_date');
+  const end = b.end_date ? V.date(b.end_date, 'end_date') : start;
+  if (end < start) throw new V.ValidationError('end_date', 'must be on or after start');
+  return { start_date: start, end_date: end, reason: V.str(b.reason, 'reason', { max: 100, optional: true }) };
+}
+
+export async function closure(a: Admin, body: unknown): Promise<Result> {
   const b = V.obj(body, ['id', 'start_date', 'end_date', 'reason', 'delete']);
   if (b.delete) {
     const id = V.uuid(b.id, 'id');
@@ -375,10 +400,15 @@ async function closure(a: Admin, body: unknown): Promise<Result> {
     await audit(a, 'closure.delete', 'closure', id, before, null);
     return { status: 200, body: { ok: true } };
   }
-  const start = V.date(b.start_date, 'start_date');
-  const end = b.end_date ? V.date(b.end_date, 'end_date') : start;
-  if (end < start) throw new V.ValidationError('end_date', 'must be on or after start');
-  const { data } = await db().from('closures').insert({ start_date: start, end_date: end, reason: V.str(b.reason, 'reason', { max: 100, optional: true }) }).select('*').single();
+  const row = checkClosure(body);
+  if (b.id) {
+    const id = V.uuid(b.id, 'id');
+    const { data: before } = await db().from('closures').select('*').eq('id', id).single();
+    const { data } = await db().from('closures').update(row).eq('id', id).select('*').single();
+    await audit(a, 'closure.update', 'closure', id, before, data);
+    return { status: 200, body: data };
+  }
+  const { data } = await db().from('closures').insert(row).select('*').single();
   await audit(a, 'closure.create', 'closure', data!.id, null, data);
   return { status: 200, body: data };
 }
@@ -400,17 +430,9 @@ async function auditItem(a: Admin, body: unknown): Promise<Result> {
   return { status: 200, body: after };
 }
 
-// Part-day blocks: one date, or every week on a weekday (1 = Monday).
-async function timeBlock(a: Admin, body: unknown): Promise<Result> {
+export function checkBlock(body: unknown) {
   const b = V.obj(body, ['id', 'date', 'weekday', 'start_time', 'end_time', 'reason', 'delete']);
-  if (b.delete) {
-    const id = V.uuid(b.id, 'id');
-    const { data: before } = await db().from('time_blocks').select('*').eq('id', id).single();
-    await db().from('time_blocks').delete().eq('id', id);
-    await audit(a, 'block.delete', 'time_block', id, before, null);
-    return { status: 200, body: { ok: true } };
-  }
-  const weekly = b.weekday !== undefined && b.weekday !== null;
+  const weekly = b.weekday !== undefined && b.weekday !== null && b.weekday !== '';
   const row = {
     date: weekly ? null : V.date(b.date, 'date'),
     weekday: weekly ? V.int(b.weekday, 'weekday', 1, 7) : null,
@@ -419,12 +441,46 @@ async function timeBlock(a: Admin, body: unknown): Promise<Result> {
     reason: V.str(b.reason, 'reason', { max: 100, optional: true }),
   };
   if (row.end_time <= row.start_time) throw new V.ValidationError('end_time', 'must be after the start');
+  return row;
+}
+
+// Part-day blocks: one date, or every week on a weekday (1 = Monday).
+export async function timeBlock(a: Admin, body: unknown): Promise<Result> {
+  const b = V.obj(body, ['id', 'date', 'weekday', 'start_time', 'end_time', 'reason', 'delete']);
+  if (b.delete) {
+    const id = V.uuid(b.id, 'id');
+    const { data: before } = await db().from('time_blocks').select('*').eq('id', id).single();
+    await db().from('time_blocks').delete().eq('id', id);
+    await audit(a, 'block.delete', 'time_block', id, before, null);
+    return { status: 200, body: { ok: true } };
+  }
+  const row = checkBlock(body);
+  if (b.id) {
+    const id = V.uuid(b.id, 'id');
+    const { data: before } = await db().from('time_blocks').select('*').eq('id', id).single();
+    const { data } = await db().from('time_blocks').update(row).eq('id', id).select('*').single();
+    await audit(a, 'block.update', 'time_block', id, before, data);
+    return { status: 200, body: data };
+  }
   const { data } = await db().from('time_blocks').insert(row).select('*').single();
   await audit(a, 'block.create', 'time_block', data!.id, null, data);
   return { status: 200, body: data };
 }
 
-async function reminderRule(a: Admin, body: unknown): Promise<Result> {
+export function checkRule(body: unknown) {
+  const b = V.obj(body, ['id', 'step', 'channel', 'offset_days', 'condition', 'active', 'delete']);
+  if (!['email', 'postcard'].includes(b.channel as string)) throw new V.ValidationError('channel', 'must be email or postcard');
+  if (!['no_booking_since_due', 'no_booking_since_previous_step'].includes(b.condition as string)) throw new V.ValidationError('condition', 'invalid');
+  return {
+    step: V.int(b.step, 'step', 1, 20),
+    channel: b.channel as string,
+    offset_days: V.int(b.offset_days, 'offset_days', -365, 365),
+    condition: b.condition as string,
+    active: b.active === undefined ? true : V.bool(b.active, 'active'),
+  };
+}
+
+export async function reminderRule(a: Admin, body: unknown): Promise<Result> {
   const b = V.obj(body, ['id', 'step', 'channel', 'offset_days', 'condition', 'active', 'delete']);
   if (b.delete) {
     const id = V.uuid(b.id, 'id');
@@ -433,15 +489,7 @@ async function reminderRule(a: Admin, body: unknown): Promise<Result> {
     await audit(a, 'reminder_rule.deactivate', 'reminder_rule', id, before, null);
     return { status: 200, body: { ok: true } };
   }
-  if (!['email', 'postcard'].includes(b.channel as string)) throw new V.ValidationError('channel', 'invalid');
-  if (!['no_booking_since_due', 'no_booking_since_previous_step'].includes(b.condition as string)) throw new V.ValidationError('condition', 'invalid');
-  const row = {
-    step: V.int(b.step, 'step', 1, 20),
-    channel: b.channel,
-    offset_days: V.int(b.offset_days, 'offset_days', -365, 365),
-    condition: b.condition,
-    active: b.active === undefined ? true : V.bool(b.active, 'active'),
-  };
+  const row = checkRule(body);
   if (b.id) {
     const id = V.uuid(b.id, 'id');
     const { data: before } = await db().from('reminder_rules').select('*').eq('id', id).single();
@@ -499,6 +547,7 @@ export async function adminAction(req: Req, action: string, body: unknown): Prom
     case 'level': return setLevel(a, body);
     case 'closure': return closure(a, body);
     case 'block': return timeBlock(a, body);
+    case 'workbook-apply': return workbookApply(a, body);
     case 'audit-item': return auditItem(a, body);
     case 'rule': return reminderRule(a, body);
     case 'export': return exportCsv(a, body);

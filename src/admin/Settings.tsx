@@ -10,7 +10,7 @@ import { BlockForm, blockLabel, type Block } from './DayView';
 type Kind = 'text' | 'int' | 'bool' | 'time' | 'email' | 'color';
 interface F { k: string; label: string; t: Kind; help?: string }
 
-const SECTIONS: { title: string; fields: F[] }[] = [
+export const SECTIONS: { title: string; fields: F[] }[] = [
   {
     title: 'Shop',
     fields: [

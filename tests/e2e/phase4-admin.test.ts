@@ -1,5 +1,6 @@
 // Requires the dev servers (see README). Skips otherwise.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { readFileSync } from 'node:fs';
 import type { Browser } from 'playwright';
 import * as OTPAuth from 'otpauth';
 import { BASE, SHOTS, launch, serverUp } from './helpers';
@@ -102,6 +103,24 @@ describe.skipIf(!up)('Phase 4: admin console', () => {
       await page.getByText(text).first().waitFor();
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-${path}.png`, fullPage: true });
     }
+    // Excel round trip: download the workbook, change a service's minutes, upload, preview, save.
+    await page.goto(`${BASE}/admin/export`);
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download workbook (.xlsx)' }).click()]);
+    const file = await dl.path();
+    const XLSX = await import('xlsx');
+    const book = XLSX.read(readFileSync(file!));
+    expect(book.SheetNames).toEqual(expect.arrayContaining(['Read me', 'Services', 'Hours', 'Settings', 'Customers', 'Bookings']));
+    const svc = XLSX.utils.sheet_to_json<any>(book.Sheets.Services);
+    const brakes = svc.find((r) => r.Name === 'Brakes');
+    brakes.Minutes = 200;
+    book.Sheets.Services = XLSX.utils.json_to_sheet(svc);
+    const edited = XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
+    await page.getByLabel('Upload edited workbook').setInputFiles({ name: 'edited.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: edited });
+    await page.getByText(/Minutes: 180 → 200/).waitFor();
+    await page.getByRole('button', { name: /^Save 1 change$/ }).click();
+    await page.getByText('Saved 1 change.').waitFor();
+    expect((await sql`select duration_minutes from arts.services where name = 'Brakes'`)[0].duration_minutes).toBe(200);
+
     // Services editor: change a time and save.
     await page.goto(`${BASE}/admin/settings`);
     const oilCard = page.locator('.svc-card', { has: page.locator('input[value="Oil change"]') });
