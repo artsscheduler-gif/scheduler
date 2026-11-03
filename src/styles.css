@@ -414,3 +414,15 @@ button.day.on { background: var(--brand); color: var(--on-brand); border-color: 
 .ck-detail p { margin: 0; white-space: pre-wrap; }
 .ck-note { display: grid; gap: 4px; font-size: 0.82rem; color: var(--muted); }
 .linklike { background: none; border: 0; padding: 0; color: var(--brand); text-decoration: underline; cursor: pointer; font: inherit; }
+
+/* Admin help */
+.help-page { display: grid; gap: 14px; max-width: 860px; }
+.help-page h2 { margin: 0; }
+.help-toc { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+.help-toc div { display: grid; gap: 4px; align-content: start; }
+.help-toc a { color: var(--brand); }
+.help-topic { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; scroll-margin-top: 80px; }
+.help-topic:first-of-type { border-top: 0; }
+.help-topic h3 { margin: 0 0 6px; display: flex; gap: 8px; align-items: center; }
+.help-topic p, .help-topic ul, .help-topic ol { margin: 0 0 6px; line-height: 1.5; }
+.help-who { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; background: #eeebe4; color: var(--muted); border-radius: 999px; padding: 1px 8px; }

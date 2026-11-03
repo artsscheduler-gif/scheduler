@@ -74,7 +74,7 @@ describe.skipIf(!up)('Phase 4: admin console', () => {
     const [b] = await sql`select status from arts.bookings`;
     expect(b.status).toBe('confirmed');
 
-    for (const [path, text] of [['customers', 'Pick a customer.'], ['approvals', 'Approval ladder'], ['settings', 'Services'], ['activity', 'Changes'], ['export', 'Export'], ['book', 'Phone booking']]) {
+    for (const [path, text] of [['customers', 'Pick a customer.'], ['approvals', 'Approval ladder'], ['settings', 'Services'], ['activity', 'Changes'], ['export', 'Export'], ['book', 'Phone booking'], ['help', 'How to use the admin']]) {
       await page.goto(`${BASE}/admin/${path}`);
       await page.getByText(text).first().waitFor();
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-${path}.png`, fullPage: true });
