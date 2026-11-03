@@ -25,7 +25,8 @@ const vehicle = (b: B) => [b.vehicles?.year, b.vehicles?.make, b.vehicles?.model
 
 function when(s: Settings, b: Pick<B, 'date' | 'kind' | 'start_time'>) {
   const d = formatDate(b.date, { weekday: 'short', month: 'short', day: 'numeric' });
-  return b.kind === 'wait' ? `${d} · ${formatTime(b.start_time)} wait` : `${d} · drop-off ${formatTime(s.dropoff_window_start)}–${formatTime(s.dropoff_window_end)}`;
+  if (b.kind === 'wait') return `${d} · ${formatTime(b.start_time)} wait`;
+  return b.start_time ? `${d} · drop-off ${formatTime(b.start_time)}` : `${d} · drop-off ${formatTime(s.dropoff_window_start)}–${formatTime(s.dropoff_window_end)}`;
 }
 
 function hoursFor(s: Settings, date: string) {
@@ -44,14 +45,14 @@ function SlotFields({ value, onChange }: { value: { date: string; kind: 'wait' |
         <option value="wait">Wait</option>
         <option value="dropoff">Drop-off</option>
       </select>
-      {value.kind === 'wait' && <input type="time" step={900} value={value.start_time} onChange={(e) => onChange({ ...value, start_time: e.target.value })} aria-label="Start time" />}
+      <input type="time" step={900} value={value.start_time} onChange={(e) => onChange({ ...value, start_time: e.target.value })} aria-label={value.kind === 'wait' ? 'Start time' : 'Drop-off time (optional)'} title={value.kind === 'wait' ? undefined : 'Optional for drop-offs'} />
     </div>
   );
 }
 
 function RequestCard({ b, original, s, onDone }: { b: B; original: B | null; s: Settings; onDone: () => void }) {
   const [mode, setMode] = useState<'idle' | 'propose' | 'decline'>('idle');
-  const [slot, setSlot] = useState({ date: b.date, kind: b.kind, start_time: b.start_time?.slice(0, 5) ?? '09:00' });
+  const [slot, setSlot] = useState({ date: b.date, kind: b.kind, start_time: b.start_time?.slice(0, 5) ?? (b.kind === 'wait' ? '09:00' : '') });
   const [reason, setReason] = useState('');
   const [violations, setViolations] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -131,7 +132,7 @@ function RequestCard({ b, original, s, onDone }: { b: B; original: B | null; s: 
 }
 
 function BookingDetail({ b, s, onClose, onChanged }: { b: B; s: Settings; onClose: () => void; onChanged: () => void }) {
-  const [slot, setSlot] = useState({ date: b.date, kind: b.kind, start_time: b.start_time?.slice(0, 5) ?? '09:00' });
+  const [slot, setSlot] = useState({ date: b.date, kind: b.kind, start_time: b.start_time?.slice(0, 5) ?? (b.kind === 'wait' ? '09:00' : '') });
   const [violations, setViolations] = useState<string[] | null>(null);
   const [msg, setMsg] = useState('');
 
@@ -385,7 +386,7 @@ export function DayView() {
               {layout.dropoffs.length === 0 && <p className="muted small">None yet. Drag a waiter here to make it a drop-off.</p>}
               {layout.dropoffs.map((b) => (
                 <button key={b.id} className={`drop st-${b.status}`} draggable={['confirmed', 'requested'].includes(b.status)} onDragStart={(e) => e.dataTransfer.setData('text/booking', b.id)} onClick={() => setDetail(b)}>
-                  <strong>{b.customers.name}</strong> <span className="muted">{b.total_minutes} min</span>
+                  <strong>{b.customers.name}</strong> <span className="muted">{b.start_time ? `${formatTime(b.start_time)} · ` : ''}{b.total_minutes} min</span>
                   <span>{svcNames(b)} · {vehicle(b)}</span>
                   {b.status !== 'confirmed' && <span className="badge">{STATUS_LABEL[b.status]}</span>}
                 </button>

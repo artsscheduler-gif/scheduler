@@ -44,15 +44,15 @@ describe.skipIf(!up)('Phase 3: public booking on a 375px phone', () => {
     await noHorizontalScroll(page);
     await page.getByRole('button', { name: 'Next' }).click();
 
-    await expect(page.getByRole('radio', { name: /Wait/ })).toBeTruthy();
-    await page.getByRole('radio', { name: /^Wait/ }).click();
-    await shot(page, '2-kind');
+    await page.locator('button.day').first().click();
+    await page.getByRole('radio', { name: '10:00am' }).click();
+    await shot(page, '2-when');
+    await noHorizontalScroll(page);
     await page.getByRole('button', { name: 'Next' }).click();
 
-    await page.locator('button.day').first().click();
-    await page.locator('button.time').first().click();
-    await shot(page, '3-when');
-    await noHorizontalScroll(page);
+    // Time first, then wait or drop off; both are open at 10:00.
+    await page.getByRole('radio', { name: /^Drop off/ }).click();
+    await shot(page, '3-kind');
     await page.getByRole('button', { name: 'Next' }).click();
 
     await page.getByLabel('Name').fill('Robin Example');
@@ -74,17 +74,20 @@ describe.skipIf(!up)('Phase 3: public booking on a 375px phone', () => {
 
     await page.getByRole('heading', { name: 'Request received' }).waitFor();
     await shot(page, '5-done');
-    const [b] = await sql`select b.status, b.customer_notes, c.phone from arts.bookings b join arts.customers c on c.id = b.customer_id`;
-    expect(b).toMatchObject({ status: 'requested', customer_notes: 'Light comes on <b>sometimes</b>', phone: '+16105550142' });
+    const [b] = await sql`select b.status, b.kind, b.start_time, b.customer_notes, c.phone from arts.bookings b join arts.customers c on c.id = b.customer_id`;
+    expect(b).toMatchObject({ status: 'requested', kind: 'dropoff', start_time: '10:00:00', customer_notes: 'Light comes on <b>sometimes</b>', phone: '+16105550142' });
   });
 
-  it('hides Wait when a service is not wait-eligible', async () => {
+  it('offers only drop-off when a service is not wait-eligible', async () => {
     const page = await phone();
     await page.goto(BASE);
     await page.getByText('Brakes', { exact: true }).click();
     await page.getByRole('button', { name: 'Next' }).click();
-    expect(await page.getByRole('radio', { name: /^Wait/ }).count()).toBe(0);
-    expect(await page.getByRole('radio', { name: /^Drop off/ }).count()).toBe(1);
+    await page.locator('button.day').first().click();
+    await page.getByRole('radio', { name: '9:00am' }).click();
+    await page.getByRole('button', { name: 'Next' }).click();
+    expect(await page.getByRole('radio', { name: /^Wait/ }).isDisabled()).toBe(true);
+    expect(await page.getByRole('radio', { name: /^Drop off/ }).getAttribute('aria-checked')).toBe('true');
   });
 
   it('shows the phone fallback on a server error', async () => {
@@ -92,8 +95,6 @@ describe.skipIf(!up)('Phase 3: public booking on a 375px phone', () => {
     await page.route('**/api/availability?services=*', (r) => r.fulfill({ status: 503, body: '{"error":"unavailable"}' }));
     await page.goto(BASE);
     await page.getByText('Oil change', { exact: true }).click();
-    await page.getByRole('button', { name: 'Next' }).click();
-    await page.getByRole('radio', { name: /^Wait/ }).click();
     await page.getByRole('button', { name: 'Next' }).click();
     await page.getByText('Call us at').waitFor();
     expect(await page.getByRole('link', { name: /Call \(555\) 010-0199/ }).count()).toBe(1);

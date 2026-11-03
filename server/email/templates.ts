@@ -84,9 +84,9 @@ export interface BookingView {
 
 export function whenText(s: ShopSettings, b: { date: string; kind: string; start_time: string | null }): string {
   const day = formatDate(b.date);
-  return b.kind === 'wait'
-    ? `${day} at ${formatTime(b.start_time)} (you’ll wait)`
-    : `${day}, drop off between ${formatTime(s.dropoff_window_start)} and ${formatTime(s.dropoff_window_end)}`;
+  if (b.kind === 'wait') return `${day} at ${formatTime(b.start_time)} (you’ll wait)`;
+  if (b.start_time) return `${day}, drop off at ${formatTime(b.start_time)}`;
+  return `${day}, drop off between ${formatTime(s.dropoff_window_start)} and ${formatTime(s.dropoff_window_end)}`;
 }
 
 function bookingDetails(s: ShopSettings, b: BookingView): [string, string][] {

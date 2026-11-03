@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api, ApiError } from './api';
-import { CallUs, KindPicker, ServicePicker, Shell, SlotPicker, Turnstile, useConfig, type Slot } from './components';
+import { CallUs, KindPicker, ServicePicker, Shell, SlotPicker, Turnstile, useConfig, type Picked } from './components';
 import { VehicleFields } from './vehicle';
 import { formatDate, formatTime } from '../../shared/time';
 
@@ -17,7 +17,7 @@ export function BookingApp() {
   const [serviceIds, setServiceIds] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
   const [kind, setKind] = useState<'wait' | 'dropoff' | null>(null);
-  const [slot, setSlot] = useState<Slot | null>(null);
+  const [slot, setSlot] = useState<Picked | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -29,9 +29,11 @@ export function BookingApp() {
     [config, serviceIds],
   );
 
+  // A new time resets the choice, unless only one way is open at that time.
   useEffect(() => {
-    if (!waitAllowed && kind === 'wait') setKind(null);
-  }, [waitAllowed]);
+    if (!slot) return setKind(null);
+    setKind(slot.time.wait && !slot.time.dropoff ? 'wait' : !slot.time.wait && slot.time.dropoff ? 'dropoff' : null);
+  }, [slot?.date, slot?.time.time]);
 
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -61,7 +63,7 @@ export function BookingApp() {
         customer_notes: notes,
         date: slot.date,
         kind,
-        start_time: slot.start_time,
+        start_time: slot.time.time,
         name: String(f.get('name') ?? ''),
         email: String(f.get('email') ?? ''),
         phone: String(f.get('phone') ?? ''),
@@ -80,7 +82,7 @@ export function BookingApp() {
       if (err instanceof ApiError && err.code === 'slot_unavailable') {
         setSlot(null);
         setSlotGone(true);
-        setStep(3);
+        setStep(2);
       } else if (err instanceof ApiError && err.code === 'invalid' && err.field) {
         setFieldError(err.field);
       } else if (err instanceof ApiError && err.code === 'verification_failed') {
@@ -95,8 +97,8 @@ export function BookingApp() {
 
   if (step === 'done' && result) {
     const when = result.kind === 'wait'
-      ? `${formatDate(result.date)} at ${formatTime(result.start_time)}`
-      : `${formatDate(result.date)}, drop off ${config.dropoff_window[0]}–${config.dropoff_window[1]}`;
+      ? `${formatDate(result.date)} at ${formatTime(result.start_time)}, waiting`
+      : `${formatDate(result.date)}, drop off at ${formatTime(result.start_time)}`;
     return (
       <Shell config={config}>
         <div className="done">
@@ -148,31 +150,24 @@ export function BookingApp() {
 
       {step === 2 && (
         <section>
-          <h1 tabIndex={-1}>Wait or drop off?</h1>
-          <p className="lede">{selectedNames}</p>
-          <KindPicker waitAllowed={waitAllowed} value={kind} dropoffWindow={config.dropoff_window} onChange={(k) => { setKind(k); setSlot(null); }} />
-          <div className="actions">
+          <h1 tabIndex={-1}>When works for you?</h1>
+          {slotGone && <p className="notice" role="alert">Sorry — that time was just taken. Please pick another.</p>}
+          <SlotPicker serviceIds={serviceIds} value={slot} onChange={setSlot} onOutage={() => setStep('outage')} />
+          <div className="actions sticky">
             <button className="btn big" onClick={() => setStep(1)}>Back</button>
-            <button className="btn primary big" disabled={!kind} onClick={() => setStep(3)}>Next</button>
+            <button className="btn primary big" disabled={!slot} onClick={() => { setSlotGone(false); setStep(3); }}>Next</button>
           </div>
         </section>
       )}
 
-      {step === 3 && kind && (
+      {step === 3 && slot && (
         <section>
-          <h1 tabIndex={-1}>When works for you?</h1>
-          {slotGone && <p className="notice" role="alert">Sorry — that time was just taken. Please pick another.</p>}
-          <SlotPicker
-            serviceIds={serviceIds}
-            kind={kind}
-            dropoffWindow={config.dropoff_window}
-            value={slot}
-            onChange={setSlot}
-            onOutage={() => setStep('outage')}
-          />
-          <div className="actions sticky">
+          <h1 tabIndex={-1}>Wait or drop off?</h1>
+          <p className="lede">{selectedNames} · {formatDate(slot.date, { weekday: 'short', month: 'short', day: 'numeric' })} at {formatTime(slot.time.time)}</p>
+          <KindPicker picked={slot.time} waitAllowed={waitAllowed} value={kind} dropoffWindow={config.dropoff_window} onChange={setKind} />
+          <div className="actions">
             <button className="btn big" onClick={() => setStep(2)}>Back</button>
-            <button className="btn primary big" disabled={!slot} onClick={() => { setSlotGone(false); setStep(4); }}>Next</button>
+            <button className="btn primary big" disabled={!kind} onClick={() => setStep(4)}>Next</button>
           </div>
         </section>
       )}
@@ -181,7 +176,7 @@ export function BookingApp() {
         <section>
           <h1 tabIndex={-1}>You and your car</h1>
           <p className="lede">
-            {selectedNames} · {kind === 'wait' ? `${formatDate(slot.date, { weekday: 'short', month: 'short', day: 'numeric' })} at ${formatTime(slot.start_time)}` : `${formatDate(slot.date, { weekday: 'short', month: 'short', day: 'numeric' })}, drop off`}
+            {selectedNames} · {formatDate(slot.date, { weekday: 'short', month: 'short', day: 'numeric' })} at {formatTime(slot.time.time)}, {kind === 'wait' ? 'waiting' : 'drop off'}
           </p>
           <form onSubmit={submit} noValidate={false}>
             <label className={`field ${errFor('name') ? 'bad' : ''}`}>

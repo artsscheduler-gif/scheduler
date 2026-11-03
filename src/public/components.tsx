@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { api, ApiError, FALLBACK_PHONE, type PublicConfig, type Service } from './api';
+import { api, ApiError, FALLBACK_PHONE, type OpenTime, type PublicConfig, type Service } from './api';
 import { formatDate, formatTime } from '../../shared/time';
 
 export function telHref(phone: string) {
@@ -140,57 +140,62 @@ export function ServicePicker({
   );
 }
 
+// Wait or drop off, for a time already picked. Only the ways that are open at
+// that time can be chosen; the other says why.
 export function KindPicker({
-  waitAllowed, value, onChange, dropoffWindow,
-}: { waitAllowed: boolean; value: 'wait' | 'dropoff' | null; onChange: (k: 'wait' | 'dropoff') => void; dropoffWindow: [string, string] }) {
+  picked, waitAllowed, value, onChange, dropoffWindow,
+}: {
+  picked: OpenTime; waitAllowed: boolean; value: 'wait' | 'dropoff' | null;
+  onChange: (k: 'wait' | 'dropoff') => void; dropoffWindow: [string, string];
+}) {
+  const at = formatTime(picked.time);
+  const waitWhy = !waitAllowed ? 'Not available for this kind of work.' : `No waiting spot left at ${at}. Pick another time to wait.`;
+  const dropWhy = `Drop-offs are ${dropoffWindow[0]}–${dropoffWindow[1]}. Pick a time in that range to drop off.`;
   return (
     <div className="choices" role="radiogroup" aria-label="Wait or drop off">
-      {waitAllowed && (
-        <button type="button" role="radio" aria-checked={value === 'wait'} className={`choice ${value === 'wait' ? 'on' : ''}`} onClick={() => onChange('wait')}>
-          <span className="choice-body">
-            <span className="choice-title">Wait</span>
-            <span className="choice-desc">Pick a time and wait at the shop while we work.</span>
-          </span>
-        </button>
-      )}
-      <button type="button" role="radio" aria-checked={value === 'dropoff'} className={`choice ${value === 'dropoff' ? 'on' : ''}`} onClick={() => onChange('dropoff')}>
+      <button type="button" role="radio" aria-checked={value === 'wait'} disabled={!picked.wait} className={`choice ${value === 'wait' ? 'on' : ''}`} onClick={() => onChange('wait')}>
         <span className="choice-body">
-          <span className="choice-title">Drop off</span>
-          <span className="choice-desc">Bring it in between {dropoffWindow[0]} and {dropoffWindow[1]}. We’ll call when it’s ready.</span>
+          <span className="choice-title">Wait</span>
+          <span className="choice-desc">{picked.wait ? `Come in at ${at} and wait at the shop while we work.` : waitWhy}</span>
         </span>
       </button>
-      {!waitAllowed && <p className="muted small">Waiting isn’t available for this kind of work.</p>}
+      <button type="button" role="radio" aria-checked={value === 'dropoff'} disabled={!picked.dropoff} className={`choice ${value === 'dropoff' ? 'on' : ''}`} onClick={() => onChange('dropoff')}>
+        <span className="choice-body">
+          <span className="choice-title">Drop off</span>
+          <span className="choice-desc">{picked.dropoff ? `Drop it off at ${at}. We’ll call when it’s ready.` : dropWhy}</span>
+        </span>
+      </button>
     </div>
   );
 }
 
 export interface Slot { date: string; kind: 'wait' | 'dropoff'; start_time: string | null }
+export interface Picked { date: string; time: OpenTime }
 
-// Calendar of bookable days, then start times for waiters.
+// Calendar of bookable days, then the open times on the chosen day.
 export function SlotPicker({
-  serviceIds, kind, token, dropoffWindow, value, onChange, onOutage,
+  serviceIds, token, value, onChange, onOutage,
 }: {
-  serviceIds: string[]; kind: 'wait' | 'dropoff'; token?: string; dropoffWindow: [string, string];
-  value: Slot | null; onChange: (s: Slot | null) => void; onOutage: () => void;
+  serviceIds: string[]; token?: string; value: Picked | null; onChange: (p: Picked | null) => void; onOutage: () => void;
 }) {
   const [days, setDays] = useState<string[] | null>(null);
   const [date, setDate] = useState<string | null>(value?.date ?? null);
-  const [times, setTimes] = useState<string[] | null>(null);
+  const [times, setTimes] = useState<OpenTime[] | null>(null);
   const timesRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setDays(null);
-    api.days(serviceIds, kind, token).then((r) => setDays(r.days)).catch(onOutage);
-  }, [serviceIds.join(','), kind, token]);
+    api.days(serviceIds, token).then((r) => setDays(r.days)).catch(onOutage);
+  }, [serviceIds.join(','), token]);
 
   useEffect(() => {
-    if (!date || kind !== 'wait') return setTimes(null);
+    if (!date) return setTimes(null);
     setTimes(null);
     api.times(serviceIds, date, token).then((r) => {
       setTimes(r.times);
       requestAnimationFrame(() => timesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
     }).catch(onOutage);
-  }, [date, kind, serviceIds.join(','), token]);
+  }, [date, serviceIds.join(','), token]);
 
   if (!days) return <p className="loading">Finding open days…</p>;
   if (days.length === 0) return <p>No open days online for this. Please call us — we may still be able to fit you in.</p>;
@@ -210,7 +215,7 @@ export function SlotPicker({
 
   function pickDay(d: string) {
     setDate(d);
-    onChange(kind === 'dropoff' ? { date: d, kind, start_time: null } : null);
+    onChange(null);
   }
 
   return (
@@ -247,31 +252,25 @@ export function SlotPicker({
         </tbody>
       </table>
 
-      {date && kind === 'dropoff' && (
-        <p className="pick-summary">
-          <strong>{formatDate(date)}</strong>
-          <br />Drop off between {dropoffWindow[0]} and {dropoffWindow[1]}.
-        </p>
-      )}
-      {date && kind === 'wait' && (
+      {date && (
         <div ref={timesRef} className="times-wrap">
           <h3>{formatDate(date)}</h3>
           {!times && <p className="loading">Loading times…</p>}
           {times && times.length === 0 && <p>That day just filled up. Pick another day.</p>}
           {times && times.length > 0 && (
-            <div role="radiogroup" aria-label="Start time">
+            <div role="radiogroup" aria-label="Time">
               {[
-                { label: 'Morning', group: times.filter((t) => t < '12:00') },
-                { label: 'Afternoon', group: times.filter((t) => t >= '12:00') },
+                { label: 'Morning', group: times.filter((t) => t.time < '12:00') },
+                { label: 'Afternoon', group: times.filter((t) => t.time >= '12:00') },
               ].filter((g) => g.group.length > 0).map(({ label, group }) => (
                 <div key={label} className="time-group">
                   <h4>{label}</h4>
                   <div className="times">
                     {group.map((t) => {
-                      const on = value?.date === date && value?.start_time === t;
+                      const on = value?.date === date && value.time.time === t.time;
                       return (
-                        <button key={t} type="button" role="radio" aria-checked={on} className={`time ${on ? 'on' : ''}`} onClick={() => onChange({ date, kind, start_time: t })}>
-                          {formatTime(t)}
+                        <button key={t.time} type="button" role="radio" aria-checked={on} className={`time ${on ? 'on' : ''}`} onClick={() => onChange({ date, time: t })}>
+                          {formatTime(t.time)}
                         </button>
                       );
                     })}

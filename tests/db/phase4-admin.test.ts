@@ -104,7 +104,7 @@ describe('Approval queue', () => {
 
 describe('Overrides and phone bookings', () => {
   it('shows the broken rule and books only with an explicit override', async () => {
-    await request({ kind: 'dropoff', start_time: undefined, service_ids: [brakes] });
+    await request({ kind: 'dropoff', start_time: '10:00', service_ids: [brakes] });
     const body = { name: 'Phone Caller', phone: '610-555-0199', service_ids: [brakes], date: day, kind: 'dropoff', vehicle: { make: 'Jeep', model: 'Wrangler' } };
     const blocked = await call('create', body);
     expect(blocked.status).toBe(409);

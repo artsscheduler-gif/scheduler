@@ -35,7 +35,6 @@ export async function getAvailability(params: URLSearchParams, ip: string): Prom
   const s = await getSettings();
   await limit(`avail:${ip}`, s.rate_limit_ip_per_hour * 30, 3600);
   const services = V.uuids((params.get('services') ?? '').split(',').filter(Boolean), 'services');
-  const kind = V.kind(params.get('kind'));
   const date = params.get('date') ? V.date(params.get('date'), 'date') : null;
   let exclude: string[] = [];
   const t = params.get('t');
@@ -46,7 +45,7 @@ export async function getAvailability(params: URLSearchParams, ip: string): Prom
     exclude = v.all.filter((b) => b.status === 'confirmed' || b.status === 'requested').map((b) => b.id);
   }
   // Times or dates only: never names, never counts.
-  return { status: 200, body: await availability(services, kind, date, exclude) };
+  return { status: 200, body: await availability(services, date, exclude) };
 }
 
 // ---- book -----------------------------------------------------------------
@@ -224,7 +223,7 @@ async function submitChange(
 
 export async function postReschedule(body: unknown): Promise<Result> {
   const b = V.obj(body, ['t', 'date', 'kind', 'start_time']);
-  const slot = V.slot(b);
+  const slot = V.slot(b, true);
   return submitChange(b.t, 'reschedule', (latest, serviceIds) => ({
     slot, service_ids: serviceIds, customer_notes: latest.customer_notes,
   }));
@@ -235,7 +234,7 @@ export async function postChangeServices(body: unknown): Promise<Result> {
   const b = V.obj(body, ['t', 'service_ids', 'customer_notes', 'date', 'kind', 'start_time']);
   const serviceIds = V.uuids(b.service_ids, 'service_ids');
   const notes = V.str(b.customer_notes, 'customer_notes', { max: s.notes_max_length, optional: true });
-  const newSlot = b.date ? V.slot(b) : null;
+  const newSlot = b.date ? V.slot(b, true) : null;
   return submitChange(b.t, 'services', (latest) => ({
     slot: newSlot ?? { date: latest.date, kind: latest.kind, start_time: latest.start_time?.slice(0, 5) ?? null },
     service_ids: serviceIds,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from './api';
-import { CallUs, KindPicker, ServicePicker, Shell, SlotPicker, telHref, useConfig, type Slot } from './components';
+import { CallUs, KindPicker, ServicePicker, Shell, SlotPicker, telHref, useConfig, type Picked } from './components';
 
 interface Version {
   status: string;
@@ -45,7 +45,7 @@ export function ManagePage() {
   const [mode, setMode] = useState<Mode>('view');
   const [busy, setBusy] = useState(false);
   const [kind, setKind] = useState<'wait' | 'dropoff' | null>(null);
-  const [slot, setSlot] = useState<Slot | null>(null);
+  const [slot, setSlot] = useState<Picked | null>(null);
   const [serviceIds, setServiceIds] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
 
@@ -56,7 +56,6 @@ export function ManagePage() {
       if (latest) {
         setServiceIds(latest.services.map((s) => s.id));
         setNotes(latest.customer_notes);
-        setKind(latest.kind);
       }
     }).catch((e) => setMode(e instanceof ApiError && e.status === 401 ? 'invalid' : 'outage'));
   }
@@ -67,6 +66,14 @@ export function ManagePage() {
   const dropoffWindow = config?.dropoff_window ?? ['', ''];
   const waitAllowed = !!config && serviceIds.every((id) => config.services.find((s) => s.id === id)?.wait_eligible);
 
+  // Picking a time keeps the kind only if it's still open at that time.
+  function pick(p: Picked | null) {
+    setSlot(p);
+    if (!p) return setKind(null);
+    setKind(p.time.wait && !p.time.dropoff ? 'wait' : !p.time.wait && p.time.dropoff ? 'dropoff' : kind && p.time[kind] ? kind : null);
+  }
+  const picked = slot && kind ? { date: slot.date, kind, start_time: slot.time.time } : null;
+
   async function run(fn: () => Promise<any>, onOk: Mode) {
     setBusy(true);
     try {
@@ -75,7 +82,6 @@ export function ManagePage() {
     } catch (e) {
       if (e instanceof ApiError && e.code === 'needs_new_slot') {
         setSlot(null);
-        setKind(waitAllowed ? kind : 'dropoff');
         setMode('services-slot');
       } else if (e instanceof ApiError && e.code === 'too_late') {
         load();
@@ -162,13 +168,11 @@ export function ManagePage() {
         <section>
           <h1>Pick a new time</h1>
           <p className="lede">The shop confirms changes. Your current time stays held until they do.</p>
-          <KindPicker waitAllowed={waitAllowed} value={kind} dropoffWindow={dropoffWindow} onChange={(k) => { setKind(k); setSlot(null); }} />
-          {kind && (
-            <SlotPicker serviceIds={serviceIds} kind={kind} token={t} dropoffWindow={dropoffWindow} value={slot} onChange={setSlot} onOutage={() => setMode('outage')} />
-          )}
+          <SlotPicker serviceIds={serviceIds} token={t} value={slot} onChange={pick} onOutage={() => setMode('outage')} />
+          {slot && <KindPicker picked={slot.time} waitAllowed={waitAllowed} value={kind} dropoffWindow={dropoffWindow} onChange={setKind} />}
           <div className="actions sticky">
             <button className="btn big" onClick={() => setMode('view')}>Back</button>
-            <button className="btn primary big" disabled={!slot || busy} onClick={() => run(() => api.reschedule({ t, ...slot }), 'sent')}>Request change</button>
+            <button className="btn primary big" disabled={!picked || busy} onClick={() => run(() => api.reschedule({ t, ...picked }), 'sent')}>Request change</button>
           </div>
         </section>
       )}
@@ -198,16 +202,14 @@ export function ManagePage() {
         <section>
           <h1>Pick a new time</h1>
           <p className="notice">Those services don’t fit your current time. Pick a new one.</p>
-          <KindPicker waitAllowed={waitAllowed} value={kind} dropoffWindow={dropoffWindow} onChange={(k) => { setKind(k); setSlot(null); }} />
-          {kind && (
-            <SlotPicker serviceIds={serviceIds} kind={kind} token={t} dropoffWindow={dropoffWindow} value={slot} onChange={setSlot} onOutage={() => setMode('outage')} />
-          )}
+          <SlotPicker serviceIds={serviceIds} token={t} value={slot} onChange={pick} onOutage={() => setMode('outage')} />
+          {slot && <KindPicker picked={slot.time} waitAllowed={waitAllowed} value={kind} dropoffWindow={dropoffWindow} onChange={setKind} />}
           <div className="actions sticky">
             <button className="btn big" onClick={() => setMode('services')}>Back</button>
             <button
               className="btn primary big"
-              disabled={!slot || busy}
-              onClick={() => run(() => api.changeServices({ t, service_ids: serviceIds, customer_notes: notes, ...slot }), 'sent')}
+              disabled={!picked || busy}
+              onClick={() => run(() => api.changeServices({ t, service_ids: serviceIds, customer_notes: notes, ...picked }), 'sent')}
             >
               Request change
             </button>

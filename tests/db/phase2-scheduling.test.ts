@@ -175,6 +175,26 @@ describe('Availability', () => {
     const { data: none } = await service.rpc('available_days', { p_service_ids: [ids.Brakes], p_kind: 'wait' });
     expect(none).toEqual([]);
   });
+
+  it('drop-off times sit on the grid inside the drop-off window', async () => {
+    // Seed window: 07:30–15:00.
+    expect(await check(day, 'dropoff', '10:00', ['Brakes'])).toEqual([]);
+    expect(await check(day, 'dropoff', '15:30', ['Brakes'])).toContain('outside_hours');
+    expect(await check(day, 'dropoff', '07:00', ['Brakes'])).toContain('outside_hours');
+    expect(await check(day, 'dropoff', '10:10', ['Brakes'])).toContain('off_grid');
+  });
+
+  it('lists each open time with whether waiting and drop-off are open', async () => {
+    const { data: brakes } = await service.rpc('available_slots', { p_service_ids: [ids.Brakes], p_date: day });
+    expect(brakes.every((r: any) => !r.wait && r.dropoff)).toBe(true);
+    expect(brakes.at(-1).start_time).toBe('15:00:00');
+    const { data: oil } = await service.rpc('available_slots', { p_service_ids: [ids['Oil change']], p_date: day });
+    const at = (t: string) => oil.find((r: any) => r.start_time === t);
+    expect(at('10:00:00')).toMatchObject({ wait: true, dropoff: true });
+    expect(at('16:00:00')).toMatchObject({ wait: true, dropoff: false });
+    const { data: days } = await service.rpc('available_slot_days', { p_service_ids: [ids.Brakes] });
+    expect((days as string[]).length).toBeGreaterThan(0);
+  });
 });
 
 describe('Auto-confirm conditions', () => {

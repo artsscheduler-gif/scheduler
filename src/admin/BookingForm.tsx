@@ -53,7 +53,7 @@ export function BookingForm({ initial, onDone }: { initial?: { date: string; kin
       customer_notes: String(f.get('notes') ?? ''),
       date: slot.date,
       kind: slot.kind,
-      ...(slot.kind === 'wait' ? { start_time: slot.start_time } : {}),
+      ...(slot.kind === 'wait' || slot.start_time ? { start_time: slot.start_time } : {}),
       send_email: f.get('send_email') === 'on',
     };
     if (customer) {
@@ -141,7 +141,7 @@ export function BookingForm({ initial, onDone }: { initial?: { date: string; kin
             <option value="wait">Wait</option>
             <option value="dropoff">Drop-off</option>
           </select>
-          {slot.kind === 'wait' && <input type="time" step={900} required value={slot.start_time} onChange={(e) => setSlot({ ...slot, start_time: e.target.value })} aria-label="Start time" />}
+          <input type="time" step={900} required={slot.kind === 'wait'} value={slot.start_time} onChange={(e) => setSlot({ ...slot, start_time: e.target.value })} aria-label={slot.kind === 'wait' ? 'Start time' : 'Drop-off time (optional)'} />
         </div>
       </fieldset>
 

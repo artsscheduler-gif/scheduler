@@ -90,15 +90,16 @@ const waitSvc = config?.services.find((s) => s.wait_eligible);
 let slot: { date: string; time: string } | null = null;
 await check('3. Availability returns dates/times only', async () => {
   assert(waitSvc, 'no wait-eligible service');
-  const d = await json(`/api/availability?services=${waitSvc!.id}&kind=wait`);
+  const d = await json(`/api/availability?services=${waitSvc!.id}`);
   assert(d.status === 200, `days HTTP ${d.status}`);
   assert(JSON.stringify(Object.keys(d.body)) === '["days"]', `unexpected keys ${Object.keys(d.body)}`);
   assert(d.body.days.every((x: unknown) => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x)), 'non-date values in days');
   for (const date of d.body.days.slice(0, 6)) {
-    const t = await json(`/api/availability?services=${waitSvc!.id}&kind=wait&date=${date}`);
+    const t = await json(`/api/availability?services=${waitSvc!.id}&date=${date}`);
     assert(JSON.stringify(Object.keys(t.body)) === '["times"]', `unexpected keys ${Object.keys(t.body)}`);
-    assert(t.body.times.every((x: unknown) => typeof x === 'string' && /^\d{2}:\d{2}$/.test(x)), 'non-time values in times');
-    if (t.body.times.length) { slot = { date, time: t.body.times[0] }; break; }
+    assert(t.body.times.every((x: any) => JSON.stringify(Object.keys(x)) === '["time","wait","dropoff"]' && /^\d{2}:\d{2}$/.test(x.time)), 'unexpected values in times');
+    const w = t.body.times.find((x: any) => x.wait);
+    if (w) { slot = { date, time: w.time }; break; }
   }
   const raw = JSON.stringify(d.body);
   assert(!/@|\+1\d{10}|name|count/i.test(raw), 'response contains personal data or counts');
@@ -194,7 +195,7 @@ const admin = async (action: string, body: unknown = {}) => {
   if (r.status !== 200) throw new Error(`${action}: HTTP ${r.status} ${JSON.stringify(r.body)}`);
   return r.body;
 };
-const timesOn = async (date: string) => (await json(`/api/availability?services=${waitSvc!.id}&kind=wait&date=${date}`)).body.times as string[];
+const timesOn = async (date: string) => ((await json(`/api/availability?services=${waitSvc!.id}&date=${date}`)).body.times as { time: string; wait: boolean }[]).filter((x) => x.wait).map((x) => x.time);
 const outbox = async (kind: string, to?: string) => {
   let q = service.from('email_outbox').select('kind, to_email, html, sim_date').eq('kind', kind).gte('created_at', outboxSince);
   if (to) q = q.eq('to_email', to);

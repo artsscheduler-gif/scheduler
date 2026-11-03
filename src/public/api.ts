@@ -34,12 +34,15 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
+// One bookable time and which ways of booking it are open.
+export interface OpenTime { time: string; wait: boolean; dropoff: boolean }
+
 export const api = {
   config: () => call<PublicConfig>('/api/availability?config=1'),
-  days: (services: string[], kind: string, t?: string) =>
-    call<{ days: string[] }>(`/api/availability?${new URLSearchParams({ services: services.join(','), kind, ...(t ? { t } : {}) })}`),
+  days: (services: string[], t?: string) =>
+    call<{ days: string[] }>(`/api/availability?${new URLSearchParams({ services: services.join(','), ...(t ? { t } : {}) })}`),
   times: (services: string[], date: string, t?: string) =>
-    call<{ times: string[] }>(`/api/availability?${new URLSearchParams({ services: services.join(','), kind: 'wait', date, ...(t ? { t } : {}) })}`),
+    call<{ times: OpenTime[] }>(`/api/availability?${new URLSearchParams({ services: services.join(','), date, ...(t ? { t } : {}) })}`),
   book: (body: unknown) => call<{ status: 'confirmed' | 'requested'; date: string; kind: string; start_time: string | null; turnaround_hours: number }>('/api/book', { method: 'POST', body: JSON.stringify(body) }),
   manage: (t: string) => call<any>(`/api/manage?${new URLSearchParams({ t })}`),
   cancel: (t: string) => call<any>('/api/cancel', { method: 'POST', body: JSON.stringify({ t }) }),

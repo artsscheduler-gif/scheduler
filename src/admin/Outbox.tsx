@@ -7,7 +7,7 @@ interface Row { id: string; kind: string | null; to_email: string; from_email: s
 
 const t = (d: string) => new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-function Message({ id }: { id: string }) {
+export function Message({ id }: { id: string }) {
   const msg = useQuery(() => must(supabase.from('email_outbox').select('*').eq('id', id).single()) as Promise<Row & { html: string; text: string }>, [id]);
   const [plain, setPlain] = useState(false);
   const m = msg.data;

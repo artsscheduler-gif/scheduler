@@ -10,6 +10,7 @@ import { Activity } from './Activity';
 import { Export } from './Export';
 import { Outbox } from './Outbox';
 import { Simulator } from './Simulator';
+import { Lab } from './Lab';
 import { STAGING } from '../lib/env';
 
 const NAV: [string, string][] = [
@@ -21,7 +22,7 @@ const NAV: [string, string][] = [
   ['/admin/settings', 'Settings'],
   ['/admin/activity', 'Activity'],
   ['/admin/export', 'Export'],
-  ...(STAGING ? [['/admin/outbox', 'Outbox'], ['/admin/simulator', 'Simulator']] as [string, string][] : []),
+  ...(STAGING ? [['/admin/lab', 'Test lab'], ['/admin/outbox', 'Outbox'], ['/admin/simulator', 'Simulator']] as [string, string][] : []),
 ];
 
 export default function AdminApp() {
@@ -51,6 +52,7 @@ export default function AdminApp() {
               <Route path="export" element={<Export />} />
               {STAGING && <Route path="outbox" element={<Outbox />} />}
               {STAGING && <Route path="simulator" element={<Simulator />} />}
+              {STAGING && <Route path="lab" element={<Lab />} />}
             </Routes>
           </main>
         </div>

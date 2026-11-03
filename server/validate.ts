@@ -84,9 +84,12 @@ export function bool(v: unknown, field: string): boolean {
 
 export interface SlotInput { date: string; kind: 'wait' | 'dropoff'; start_time: string | null }
 
-export function slot(b: Obj): SlotInput {
+// Waiters always have a start time. Customers pick a drop-off time too; staff
+// may leave it blank.
+export function slot(b: Obj, timeRequired = false): SlotInput {
   const k = kind(b.kind);
-  return { date: date(b.date, 'date'), kind: k, start_time: k === 'wait' ? time(b.start_time, 'start_time') : null };
+  const timed = k === 'wait' || timeRequired || (b.start_time !== null && b.start_time !== undefined && b.start_time !== '');
+  return { date: date(b.date, 'date'), kind: k, start_time: timed ? time(b.start_time, 'start_time') : null };
 }
 
 export interface PublicBookingInput extends SlotInput {
@@ -104,7 +107,7 @@ export function publicBooking(body: unknown, notesMax: number): PublicBookingInp
   const b = obj(body, ['service_ids', 'customer_notes', 'date', 'kind', 'start_time', 'name', 'email', 'phone', 'vehicle', 'turnstile', 'source']);
   const v = obj(b.vehicle, ['year', 'make', 'model', 'notes'], 'vehicle');
   return {
-    ...slot(b),
+    ...slot(b, true),
     service_ids: uuids(b.service_ids, 'service_ids'),
     customer_notes: str(b.customer_notes, 'customer_notes', { max: notesMax, optional: true }),
     name: str(b.name, 'name', { max: 100 }),

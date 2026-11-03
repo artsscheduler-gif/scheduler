@@ -88,11 +88,20 @@ describe('Public booking', () => {
 
   it('availability returns times only — no names or counts', async () => {
     await postBook(body(), '10.0.0.5');
-    const r = await getAvailability(new URLSearchParams({ services: oil, kind: 'wait', date: day }), '10.0.0.5');
+    const r = await getAvailability(new URLSearchParams({ services: oil, date: day }), '10.0.0.5');
     expect(Object.keys(r.body as object)).toEqual(['times']);
-    const days = await getAvailability(new URLSearchParams({ services: oil, kind: 'wait' }), '10.0.0.5');
+    const days = await getAvailability(new URLSearchParams({ services: oil }), '10.0.0.5');
     expect(Object.keys(days.body as object)).toEqual(['days']);
     expect(JSON.stringify(r.body)).not.toMatch(/Pat|@/);
+    expect(Object.keys((r.body as any).times[0])).toEqual(['time', 'wait', 'dropoff']);
+  });
+
+  it('customers must give a drop-off time', async () => {
+    await expect(postBook(body({ kind: 'dropoff', start_time: null }), '10.0.0.7')).rejects.toThrow(/must be a time/);
+    const r = await postBook(body({ kind: 'dropoff', start_time: '10:00', email: 'drop@example.com', phone: '610-555-0188' }), '10.0.0.7');
+    expect(r.status).toBe(200);
+    const [b] = await sql`select b.kind, b.start_time from arts.bookings b join arts.customers c on c.id = b.customer_id where c.email = 'drop@example.com'`;
+    expect(b).toMatchObject({ kind: 'dropoff', start_time: '10:00:00' });
   });
 
   it('rejects malformed input and unexpected fields', async () => {
@@ -208,7 +217,7 @@ describe('Manage link', () => {
     // Brakes are not wait-eligible: the held wait slot no longer fits.
     expect(await postChangeServices({ t, service_ids: [brakes], customer_notes: '' })).toMatchObject({ status: 409, body: { error: 'needs_new_slot' } });
     // Picks a drop-off in the same flow.
-    const r = await postChangeServices({ t, service_ids: [brakes], customer_notes: 'Grinding noise', date: day, kind: 'dropoff' });
+    const r = await postChangeServices({ t, service_ids: [brakes], customer_notes: 'Grinding noise', date: day, kind: 'dropoff', start_time: '10:00' });
     expect(r.body).toMatchObject({ ok: true });
     const rows = await sql`select kind::text, status::text, change_kind from arts.bookings order by created_at`;
     expect(rows).toEqual([

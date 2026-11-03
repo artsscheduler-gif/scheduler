@@ -70,7 +70,7 @@ export function toView(l: LoadedBooking): T.BookingView {
 }
 
 export function appointmentStart(s: ShopSettings, b: { date: string; kind: string; start_time: string | null }): Date {
-  const t = b.kind === 'wait' && b.start_time ? b.start_time.slice(0, 5) : s.dropoff_window_start.slice(0, 5);
+  const t = b.start_time ? b.start_time.slice(0, 5) : s.dropoff_window_start.slice(0, 5);
   return zonedTimeToUtc(b.date, t, s.timezone);
 }
 
@@ -218,11 +218,13 @@ export function withinCutoff(s: ShopSettings, b: BookingRow, now = new Date()): 
   return appointmentStart(s, b).getTime() - now.getTime() >= s.change_cutoff_hours * 3600_000;
 }
 
-export async function availability(serviceIds: string[], kind: 'wait' | 'dropoff', date: string | null, exclude: string[] = []) {
+// Customers pick a day and time first, then wait or drop off, so each time
+// says which of the two is open.
+export async function availability(serviceIds: string[], date: string | null, exclude: string[] = []) {
   if (date) {
-    const times = await rpc<string[]>('available_times', { p_service_ids: serviceIds, p_date: date, p_exclude: exclude });
-    return { times: (times ?? []).map((t) => t.slice(0, 5)) };
+    const slots = await rpc<{ start_time: string; wait: boolean; dropoff: boolean }[]>('available_slots', { p_service_ids: serviceIds, p_date: date, p_exclude: exclude });
+    return { times: (slots ?? []).map((r) => ({ time: r.start_time.slice(0, 5), wait: r.wait, dropoff: r.dropoff })) };
   }
-  const days = await rpc<string[]>('available_days', { p_service_ids: serviceIds, p_kind: kind, p_exclude: exclude });
+  const days = await rpc<string[]>('available_slot_days', { p_service_ids: serviceIds, p_exclude: exclude });
   return { days: days ?? [] };
 }

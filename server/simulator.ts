@@ -166,10 +166,12 @@ async function bookings(a: Admin, body: unknown): Promise<Result> {
       if (!days?.length) { failed.push('no open days'); continue; }
       date = pick(days.slice(0, 15));
     }
-    if (!fixed && kind === 'wait') {
-      const times = await rpc<string[]>('available_times', { p_service_ids: [svc.id], p_date: date, p_exclude: [] });
-      if (!times?.length) { failed.push(`no times on ${date}`); continue; }
-      start = pick(times).slice(0, 5);
+    if (!fixed) {
+      // Like the public form: every request has a time, waiting or dropping off.
+      const slots = await rpc<{ start_time: string; wait: boolean; dropoff: boolean }[]>('available_slots', { p_service_ids: [svc.id], p_date: date, p_exclude: [] });
+      const open = (slots ?? []).filter((x) => x[kind]);
+      if (!open.length) { failed.push(`no times on ${date}`); continue; }
+      start = pick(open).start_time.slice(0, 5);
     }
     const r = await rpc<{ ok: boolean; booking_id?: string; status?: string; violations?: string[] }>('create_booking', {
       p: {
