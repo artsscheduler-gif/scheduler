@@ -213,36 +213,23 @@ async function updateVehicle(a: Admin, body: unknown): Promise<Result> {
   return { status: 200, body: after };
 }
 
+// Merges a duplicate into the customer being kept, in one transaction, and
+// records it so it can be undone (arts.merge_customers / unmerge_customers).
 async function mergeCustomers(a: Admin, body: unknown): Promise<Result> {
   const b = V.obj(body, ['keep_id', 'merge_id']);
   const keep = V.uuid(b.keep_id, 'keep_id');
   const merge = V.uuid(b.merge_id, 'merge_id');
   if (keep === merge) throw new V.ValidationError('merge_id', 'must differ');
-  const { data: k } = await db().from('customers').select('*').eq('id', keep).single();
-  const { data: m } = await db().from('customers').select('*').eq('id', merge).single();
-  if (!k || !m) throw new HttpError(404, { error: 'not_found' });
-  for (const t of ['vehicles', 'bookings', 'service_history', 'reminder_sends', 'email_log']) {
-    await db().from(t).update({ customer_id: keep }).eq('customer_id', merge);
-  }
-  const patch = {
-    email: k.email ?? m.email,
-    phone: k.phone ?? m.phone,
-    address_line1: k.address_line1 ?? m.address_line1,
-    address_line2: k.address_line2 ?? m.address_line2,
-    city: k.city ?? m.city,
-    state: k.state ?? m.state,
-    postal_code: k.postal_code ?? m.postal_code,
-    // Opt-outs and flags carry over: never contact someone who opted out on either record.
-    email_opt_out: k.email_opt_out || m.email_opt_out,
-    mail_opt_out: k.mail_opt_out || m.mail_opt_out,
-    email_bounced: k.email_bounced || m.email_bounced,
-    always_review: k.always_review || m.always_review,
-    epicor_id: k.epicor_id ?? m.epicor_id,
-  };
-  await db().from('customers').update(patch).eq('id', keep);
-  await db().from('customers').update({ merged_into: keep, email: null, phone: null }).eq('id', merge);
-  await audit(a, 'customer.merge', 'customer', keep, { keep: k, merged: m }, patch);
-  return { status: 200, body: { ok: true } };
+  const r = await rpc<{ ok: boolean; error?: string; merge_id?: string }>('merge_customers', { p_keep: keep, p_merge: merge, p_actor: actor(a) });
+  if (!r.ok) throw new HttpError(r.error === 'not_found' ? 404 : 409, { error: r.error });
+  return { status: 200, body: r };
+}
+
+async function unmergeCustomers(a: Admin, body: unknown): Promise<Result> {
+  const b = V.obj(body, ['merge_id']);
+  const r = await rpc<{ ok: boolean; error?: string; restored?: string }>('unmerge_customers', { p_merge_id: V.uuid(b.merge_id, 'merge_id'), p_actor: actor(a) });
+  if (!r.ok) throw new HttpError(r.error === 'not_found' ? 404 : 409, { error: r.error });
+  return { status: 200, body: r };
 }
 
 // ---- Settings -------------------------------------------------------------
@@ -486,6 +473,7 @@ export async function adminAction(req: Req, action: string, body: unknown): Prom
     case 'customer': return updateCustomer(a, body);
     case 'vehicle': return updateVehicle(a, body);
     case 'merge': return mergeCustomers(a, body);
+    case 'unmerge': return unmergeCustomers(a, body);
     case 'settings': return updateSettings(a, body);
     case 'service': return upsertService(a, body);
     case 'level': return setLevel(a, body);

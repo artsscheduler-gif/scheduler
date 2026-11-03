@@ -236,6 +236,8 @@ async function reset(a: Admin): Promise<Result> {
     if (bids.length) await db().from('bookings').update({ replaces_booking_id: null }).in('id', bids);
     await del('bookings', 'id', bids);
     await del('vehicles', 'customer_id', ids);
+    await del('customer_merges', 'keep_id', ids);
+    await del('customer_merges', 'merged_id', ids);
     await db().from('customers').update({ merged_into: null }).in('merged_into', ids);
     await del('customers', 'id', ids);
   }

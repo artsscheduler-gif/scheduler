@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { NavLink, Route, Routes } from 'react-router';
 import { AuthGate, signOut } from './AuthGate';
 import { DayView } from './DayView';
@@ -27,6 +28,27 @@ const NAV: [string, string][] = [
   ...(STAGING ? [['/admin/lab', 'Test lab'], ['/admin/outbox', 'Outbox'], ['/admin/simulator', 'Simulator']] as [string, string][] : []),
 ];
 
+// Any admin action that fails without handling its own error shows here,
+// instead of failing silently.
+function ErrorBanner() {
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    const onReject = (e: PromiseRejectionEvent) => {
+      setErr(e.reason instanceof Error ? e.reason.message : String(e.reason));
+      e.preventDefault();
+    };
+    window.addEventListener('unhandledrejection', onReject);
+    return () => window.removeEventListener('unhandledrejection', onReject);
+  }, []);
+  if (!err) return null;
+  return (
+    <div className="banner error-banner" role="alert">
+      That didn’t work: {err}. Check the result, then try again or reload the page.
+      <button className="btn small" onClick={() => setErr(null)}>Dismiss</button>
+    </div>
+  );
+}
+
 export default function AdminApp() {
   return (
     <AuthGate>
@@ -43,6 +65,7 @@ export default function AdminApp() {
             <button className="btn small" onClick={signOut}>Sign out</button>
           </header>
           <main className="admin-main">
+            <ErrorBanner />
             <Routes>
               <Route index element={<DayView />} />
               <Route path="book" element={<div className="narrow-page"><h2>Phone booking</h2><BookingForm /></div>} />

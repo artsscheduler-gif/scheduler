@@ -71,6 +71,15 @@ describe.skipIf(!up)('Phase 4: admin console', () => {
 
     await page.getByRole('button', { name: 'Approve' }).click();
     await page.getByText('Nothing to approve.').waitFor();
+
+    // A failed admin action is shown, not swallowed.
+    await page.route('**/api/admin/resend', (r) => r.fulfill({ status: 500, json: { error: 'unavailable' } }));
+    await page.locator('.blk').first().click();
+    await page.getByRole('button', { name: 'Resend email' }).click();
+    await page.getByText(/That didn’t work: unavailable/).waitFor();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Dismiss' }).click();
+    await page.unroute('**/api/admin/resend');
     const [b] = await sql`select status from arts.bookings`;
     expect(b.status).toBe('confirmed');
 

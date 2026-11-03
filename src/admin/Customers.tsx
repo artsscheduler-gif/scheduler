@@ -45,6 +45,7 @@ function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
   const history = useQuery(() => must(supabase.from('service_history').select('id, service_date, raw_service, source, mileage, services(name), vehicles(year, make, model)').eq('customer_id', id).order('service_date', { ascending: false })), [id]);
   const bookings = useQuery(() => must(supabase.from('bookings').select('id, date, kind, start_time, status, booking_services(services(name))').eq('customer_id', id).neq('status', 'replaced').order('date', { ascending: false }).limit(50)), [id]);
   const reminders = useQuery(() => must(supabase.from('reminder_sends').select('id, step, channel, status, due_date, created_at, services(name)').eq('customer_id', id).order('created_at', { ascending: false }).limit(30)), [id]);
+  const merges = useQuery(() => must(supabase.from('customer_merges').select('id, merged_before, created_at').eq('keep_id', id).is('undone_at', null).order('created_at', { ascending: false })) as Promise<any[]>, [id]);
   const [dupes, setDupes] = useState<any[]>([]);
   const [msg, setMsg] = useState('');
 
@@ -81,10 +82,25 @@ function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
   }
 
   async function merge(otherId: string, otherName: string) {
-    if (!confirm(`Merge “${otherName}” into “${cust.name}”? Their bookings, vehicles and history move here. Opt-outs from either record are kept.`)) return;
-    await adminPost('merge', { keep_id: id, merge_id: otherId });
-    setMsg('Merged.');
-    c.reload(); history.reload(); bookings.reload(); onChanged();
+    if (!confirm(`Merge “${otherName}” into “${cust.name}”? Their bookings, vehicles and history move here. Opt-outs from either record are kept. You can undo this below.`)) return;
+    try {
+      await adminPost('merge', { keep_id: id, merge_id: otherId });
+      setMsg('Merged.');
+    } catch (e) {
+      setMsg(`Not merged: ${(e as Error).message}`);
+    }
+    c.reload(); history.reload(); bookings.reload(); merges.reload(); onChanged();
+  }
+
+  async function unmerge(mergeId: string, name: string) {
+    if (!confirm(`Undo the merge with “${name}”? Their bookings, vehicles and history go back to their own record.`)) return;
+    try {
+      await adminPost('unmerge', { merge_id: mergeId });
+      setMsg('Merge undone.');
+    } catch (e) {
+      setMsg(`Couldn’t undo: ${(e as Error).message}`);
+    }
+    c.reload(); history.reload(); bookings.reload(); merges.reload(); onChanged();
   }
 
   return (
@@ -112,6 +128,18 @@ function Detail({ id, onChanged }: { id: string; onChanged: () => void }) {
             <div key={d.id} className="row">
               <span>{d.name} · {formatPhone(d.phone)} · {d.email}</span>
               <button className="btn small" onClick={() => merge(d.id, d.name)}>Merge into this customer</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!!merges.data?.length && (
+        <div className="notice">
+          <strong>Merged into this customer</strong>
+          {merges.data.map((m) => (
+            <div key={m.id} className="row">
+              <span>{m.merged_before.name}{m.merged_before.phone ? ` · ${formatPhone(m.merged_before.phone)}` : ''}{m.merged_before.email ? ` · ${m.merged_before.email}` : ''} · {new Date(m.created_at).toLocaleDateString()}</span>
+              <button className="btn small" onClick={() => unmerge(m.id, m.merged_before.name)}>Undo merge</button>
             </div>
           ))}
         </div>

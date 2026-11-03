@@ -224,6 +224,17 @@ describe('Audit log', () => {
     expect(kept).toEqual({ phone: '+16105550000', mail_opt_out: true });
     const [{ c }] = await sql`select count(*)::int as c from arts.service_history where customer_id = ${a.id}`;
     expect(c).toBe(1);
+
+    // Undo puts both records back as they were.
+    const [m] = await sql`select id from arts.customer_merges where keep_id = ${a.id}`;
+    expect((await call('unmerge', { merge_id: m.id })).status).toBe(200);
+    const [kept2] = await sql`select phone, mail_opt_out from arts.customers where id = ${a.id}`;
+    expect(kept2).toEqual({ phone: null, mail_opt_out: false });
+    const [back] = await sql`select phone, mail_opt_out, merged_into from arts.customers where id = ${b.id}`;
+    expect(back).toEqual({ phone: '+16105550000', mail_opt_out: true, merged_into: null });
+    const [{ c: moved }] = await sql`select count(*)::int as c from arts.service_history where customer_id = ${b.id}`;
+    expect(moved).toBe(1);
+    await expect(call('unmerge', { merge_id: m.id })).rejects.toMatchObject({ status: 409 });
   });
 });
 

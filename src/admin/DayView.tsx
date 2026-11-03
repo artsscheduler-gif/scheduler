@@ -401,6 +401,7 @@ export function DayView({ refresh }: { refresh?: unknown } = {}) {
 
       <section className="queue" aria-label="Waiting for you">
         <h2>Waiting for you {requests.data && <span className="count-pill">{requests.data.rows.length}</span>}</h2>
+        {requests.error && <p className="error" role="alert">Couldn’t load requests: {requests.error} <button className="btn small" onClick={requests.reload}>Try again</button></p>}
         {requests.data?.rows.length === 0 && <p className="muted">Nothing to approve.</p>}
         {requests.data?.rows.map((b) => (
           <RequestCard key={b.id} b={b} s={s} original={b.replaces_booking_id ? requests.data!.originals[b.replaces_booking_id] ?? null : null} onDone={reloadAll} />
@@ -449,6 +450,7 @@ export function DayView({ refresh }: { refresh?: unknown } = {}) {
           </ul>
         )}
 
+        {day.error && <p className="error" role="alert">Couldn’t load this day: {day.error} <button className="btn small" onClick={day.reload}>Try again</button></p>}
         {!layout?.hrs ? (
           <p className="muted">Closed this day.</p>
         ) : (
