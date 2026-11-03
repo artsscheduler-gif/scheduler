@@ -56,9 +56,9 @@ export const api = {
     call<{ times: OpenTime[] }>(`/api/availability?${new URLSearchParams({ services: services.join(','), date, ...(t ? { t } : {}) })}`),
   book: (body: unknown) => call<{ status: 'confirmed' | 'requested'; date: string; kind: string; start_time: string | null; turnaround_hours: number }>('/api/book', { method: 'POST', body: JSON.stringify(body) }),
   manage: (t: string) => call<any>(`/api/manage?${new URLSearchParams({ t })}`),
-  cancel: (t: string) => call<any>('/api/cancel', { method: 'POST', body: JSON.stringify({ t }) }),
-  reschedule: (body: unknown) => call<any>('/api/reschedule', { method: 'POST', body: JSON.stringify(body) }),
-  changeServices: (body: unknown) => call<any>('/api/change-services', { method: 'POST', body: JSON.stringify(body) }),
+  cancel: (t: string) => call<any>('/api/manage?op=cancel', { method: 'POST', body: JSON.stringify({ t }) }),
+  reschedule: (body: unknown) => call<any>('/api/manage?op=reschedule', { method: 'POST', body: JSON.stringify(body) }),
+  changeServices: (body: unknown) => call<any>('/api/manage?op=change-services', { method: 'POST', body: JSON.stringify(body) }),
   me: (k: string) => call<Profile>(`/api/me?${new URLSearchParams({ k })}`),
   sendCode: (email: string) => call<{ ok: true }>('/api/me', { method: 'POST', body: JSON.stringify({ action: 'code', email }) }),
   verifyCode: (email: string, code: string, remember: boolean) =>

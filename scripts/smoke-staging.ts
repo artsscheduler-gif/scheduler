@@ -270,7 +270,7 @@ await check('8e. Cancel through the manage link; capacity is released', async ()
   const [mail] = await outbox('booking_confirmed', customerEmail);
   const t = mail?.html.match(/\/manage\?t=([^"'&<\s]+)/)?.[1];
   assert(t, 'no manage link in the confirmation email');
-  const r = await post('/api/cancel', { t: decodeURIComponent(t!) });
+  const r = await post('/api/manage?op=cancel', { t: decodeURIComponent(t!) });
   assert(r.status === 200 && r.body?.state === 'cancelled', `cancel HTTP ${r.status} ${JSON.stringify(r.body)}`);
   assert((await timesOn(slot!.date)).includes(slot!.time), `${slot!.time} still unavailable after cancel`);
   return ['PASS', `${slot!.time} on ${slot!.date} filled, then reopened`];
