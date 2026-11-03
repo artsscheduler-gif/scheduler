@@ -81,6 +81,12 @@ export function standardizeZip(z: string | null | undefined): string | null {
   return null;
 }
 
+// Two-digit years: up to next year means 20xx, anything later 19xx ("98" is 1998).
+export function fullYear(yy: number, now = new Date()): number {
+  const pivot = (now.getUTCFullYear() + 1) % 100;
+  return yy <= pivot ? 2000 + yy : 1900 + yy;
+}
+
 export function parseDate(v: string, fmt: Mapping['dateFormat']): string | null {
   const s = v.trim();
   if (!s) return null;
@@ -88,7 +94,7 @@ export function parseDate(v: string, fmt: Mapping['dateFormat']): string | null 
   const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
   if (iso) [y, m, d] = [Number(iso[1]), Number(iso[2]), Number(iso[3])];
-  else if (us && fmt === 'MM/DD/YYYY') [m, d, y] = [Number(us[1]), Number(us[2]), Number(us[3].length === 2 ? `20${us[3]}` : us[3])];
+  else if (us && fmt === 'MM/DD/YYYY') [m, d, y] = [Number(us[1]), Number(us[2]), us[3].length === 2 ? fullYear(Number(us[3])) : Number(us[3])];
   else return null;
   const dt = new Date(Date.UTC(y, m - 1, d));
   if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
@@ -168,7 +174,8 @@ export function planImport(
     if (yes(get('email_opt_out'))) c.email_opt_out = true;
     if (yes(get('mail_opt_out'))) c.mail_opt_out = true;
 
-    const year = Number(get('vehicle_year')) || null;
+    const yearRaw = Number(get('vehicle_year')) || null;
+    const year = yearRaw !== null && yearRaw < 100 ? fullYear(yearRaw) : yearRaw;
     const make = get('vehicle_make') ? titleCase(get('vehicle_make')) : null;
     const model = get('vehicle_model') || null;
     let vehicleKey: string | null = null;
@@ -204,7 +211,9 @@ export function planImport(
       if (other && other !== c) plan.duplicates.push({ kind: 'in_file', customer: `${c.name} (rows ${c.rows.join(',')})`, other: `${other.name} (rows ${other.rows.join(',')})`, match: label });
       else seen.set(`${label}:${v}`, c);
     }
-    const ex = existing.find((e) => (c.email && e.email?.toLowerCase() === c.email) || (c.phone && e.phone === c.phone));
+    // Same rule as arts.import_customer: email, or phone when the last names agree.
+    const last = (n: string) => n.trim().toLowerCase().split(/\s+/).pop();
+    const ex = existing.find((e) => (c.email && e.email?.toLowerCase() === c.email) || (c.phone && e.phone === c.phone && last(e.name) === last(c.name)));
     if (ex) plan.duplicates.push({ kind: 'existing', customer: `${c.name} (rows ${c.rows.join(',')})`, other: `${ex.name} [${ex.id}]`, match: ex.email?.toLowerCase() === c.email ? 'email' : 'phone' });
   }
 
@@ -238,8 +247,13 @@ export function reportMarkdown(plan: ImportPlan, source: string): string {
     `## Rejected rows`,
     plan.rejected.length ? plan.rejected.map((r) => `- Row ${r.row}: ${r.reason}`).join('\n') : '_None._',
     ``,
-    `## Likely duplicates (review, then merge in admin after import)`,
-    plan.duplicates.length ? plan.duplicates.map((d) => `- ${d.kind === 'existing' ? 'Already in system' : 'Within file'} (same ${d.match}): ${d.customer} ↔ ${d.other}`).join('\n') : '_None._',
+    `## Already in the system (will be updated, not duplicated)`,
+    plan.duplicates.some((d) => d.kind === 'existing')
+      ? plan.duplicates.filter((d) => d.kind === 'existing').map((d) => `- Same ${d.match}: ${d.customer} → ${d.other}`).join('\n') : '_None._',
+    ``,
+    `## Likely duplicates within the file (review, then merge in admin after import)`,
+    plan.duplicates.some((d) => d.kind === 'in_file')
+      ? plan.duplicates.filter((d) => d.kind === 'in_file').map((d) => `- Same ${d.match}: ${d.customer} ↔ ${d.other}`).join('\n') : '_None._',
     ``,
     `## Epicor service types with no mapping (history kept, no reminders)`,
     Object.keys(plan.unmappedServices).length

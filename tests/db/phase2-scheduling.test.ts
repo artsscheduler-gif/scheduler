@@ -243,6 +243,35 @@ function addDaysIso(d: string, n: number) {
   return x.toISOString().slice(0, 10);
 }
 
+describe('Booking-page rules', () => {
+  it('times earlier today are refused when same-day booking is allowed', async () => {
+    await sql`update arts.shop_settings set floor_days = 0, hours = jsonb_build_object('mon', '{"open":"00:00","close":"23:59"}'::jsonb, 'tue', '{"open":"00:00","close":"23:59"}'::jsonb, 'wed', '{"open":"00:00","close":"23:59"}'::jsonb, 'thu', '{"open":"00:00","close":"23:59"}'::jsonb, 'fri', '{"open":"00:00","close":"23:59"}'::jsonb, 'sat', '{"open":"00:00","close":"23:59"}'::jsonb, 'sun', '{"open":"00:00","close":"23:59"}'::jsonb)`;
+    const [{ d }] = await sql`select arts.today()::text as d`;
+    expect(await check(d, 'wait', '00:00', ['Oil change'])).toContain('past');
+    const { data: slots } = await service.rpc('available_slots', { p_service_ids: [ids['Oil change']], p_date: d });
+    const now = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
+    expect((slots as any[]).filter((r) => r.wait).every((r) => r.start_time.slice(0, 5) > now)).toBe(true);
+  });
+
+  it('says why waiting or drop-off is closed at a time', async () => {
+    await sql`insert into arts.time_blocks (date, start_time, end_time) values (${day}, '13:00', '14:00')`;
+    const { data: slots } = await service.rpc('available_slots', { p_service_ids: [ids['Oil change']], p_date: day });
+    const at = (t: string) => (slots as any[]).find((r) => r.start_time === t);
+    expect(at('12:30:00')).toMatchObject({ wait: false, wait_why: 'blocked' }); // 45-min job runs into the block
+    expect(at('16:00:00')).toMatchObject({ dropoff: false, dropoff_why: 'outside_hours' }); // after the latest drop-off
+    const { data: brakes } = await service.rpc('available_slots', { p_service_ids: [ids.Brakes], p_date: day });
+    expect((brakes as any[])[0]).toMatchObject({ wait: false, wait_why: 'not_wait_eligible' });
+  });
+
+  it('a service taken off the menu still lets an existing booking reschedule', async () => {
+    const r = await book(payload({ services: ['Oil change'] }));
+    await sql`update arts.services set active = false where id = ${ids['Oil change']}`;
+    expect(await check(day, 'wait', '10:00', ['Oil change'])).toContain('service_inactive');
+    const { data } = await service.rpc('check_booking', { p_date: day, p_kind: 'wait', p_start: '10:00', p_service_ids: [ids['Oil change']], p_exclude: [r.booking_id] });
+    expect(data).not.toContain('service_inactive');
+  });
+});
+
 describe('Auto-confirm conditions', () => {
   async function returningCustomer() {
     const email = `returning-${Date.now()}@example.com`;

@@ -97,7 +97,7 @@ await check('3. Availability returns dates/times only', async () => {
   for (const date of d.body.days.slice(0, 6)) {
     const t = await json(`/api/availability?services=${waitSvc!.id}&date=${date}`);
     assert(JSON.stringify(Object.keys(t.body)) === '["times"]', `unexpected keys ${Object.keys(t.body)}`);
-    assert(t.body.times.every((x: any) => JSON.stringify(Object.keys(x)) === '["time","wait","dropoff"]' && /^\d{2}:\d{2}$/.test(x.time)), 'unexpected values in times');
+    assert(t.body.times.every((x: any) => Object.keys(x).every((k) => ['time', 'wait', 'dropoff', 'wait_why', 'dropoff_why'].includes(k)) && /^\d{2}:\d{2}$/.test(x.time)), 'unexpected values in times');
     const w = t.body.times.find((x: any) => x.wait);
     if (w) { slot = { date, time: w.time }; break; }
   }

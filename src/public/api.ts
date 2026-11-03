@@ -35,7 +35,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 // One bookable time and which ways of booking it are open.
-export interface OpenTime { time: string; wait: boolean; dropoff: boolean }
+export type ClosedWhy = 'full' | 'not_wait_eligible' | 'blocked' | 'outside_hours' | 'past' | 'unavailable';
+export interface OpenTime { time: string; wait: boolean; dropoff: boolean; wait_why?: ClosedWhy; dropoff_why?: ClosedWhy }
 
 export const api = {
   config: () => call<PublicConfig>('/api/availability?config=1'),

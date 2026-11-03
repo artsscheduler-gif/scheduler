@@ -149,8 +149,13 @@ export function KindPicker({
   onChange: (k: 'wait' | 'dropoff') => void; dropoffWindow: [string, string];
 }) {
   const at = formatTime(picked.time);
-  const waitWhy = !waitAllowed ? 'Not available for this kind of work.' : `No waiting spot left at ${at}. Pick another time to wait.`;
-  const dropWhy = `Drop-offs are ${dropoffWindow[0]}–${dropoffWindow[1]}. Pick a time in that range to drop off.`;
+  const waitWhy = !waitAllowed || picked.wait_why === 'not_wait_eligible' ? 'Not available for this kind of work.'
+    : picked.wait_why === 'outside_hours' ? `The work would run past closing if you start waiting at ${at}. Pick an earlier time to wait.`
+    : picked.wait_why === 'blocked' ? `We can’t take a waiting customer at ${at}. Pick another time to wait.`
+    : `No waiting spot left at ${at}. Pick another time to wait.`;
+  const dropWhy = picked.dropoff_why === 'outside_hours' ? `Drop-offs are ${dropoffWindow[0]}–${dropoffWindow[1]}. Pick a time in that range to drop off.`
+    : picked.dropoff_why === 'blocked' ? `We can’t take a drop-off at ${at}. Pick another time to drop off.`
+    : 'No drop-off spots left that day. Pick another day to drop off.';
   return (
     <div className="choices" role="radiogroup" aria-label="Wait or drop off">
       <button type="button" role="radio" aria-checked={value === 'wait'} disabled={!picked.wait} className={`choice ${value === 'wait' ? 'on' : ''}`} onClick={() => onChange('wait')}>

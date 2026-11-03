@@ -93,7 +93,7 @@ describe('Public booking', () => {
     const days = await getAvailability(new URLSearchParams({ services: oil }), '10.0.0.5');
     expect(Object.keys(days.body as object)).toEqual(['days']);
     expect(JSON.stringify(r.body)).not.toMatch(/Pat|@/);
-    expect(Object.keys((r.body as any).times[0])).toEqual(['time', 'wait', 'dropoff']);
+    for (const x of (r.body as any).times) expect(Object.keys(x).every((k) => ['time', 'wait', 'dropoff', 'wait_why', 'dropoff_why'].includes(k))).toBe(true);
   });
 
   it('customers must give a drop-off time', async () => {

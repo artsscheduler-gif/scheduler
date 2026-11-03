@@ -218,12 +218,26 @@ export function withinCutoff(s: ShopSettings, b: BookingRow, now = new Date()): 
   return appointmentStart(s, b).getTime() - now.getTime() >= s.change_cutoff_hours * 3600_000;
 }
 
+// Collapses rule codes into the few reasons a customer is shown.
+function publicReason(code: string | null): string {
+  if (!code) return 'unavailable';
+  if (code.startsWith('daily_cap:') || code === 'day_capacity' || code === 'dropoff_share' || code === 'waiter_lanes') return 'full';
+  if (['not_wait_eligible', 'blocked', 'outside_hours', 'past'].includes(code)) return code;
+  return 'unavailable';
+}
+
 // Customers pick a day and time first, then wait or drop off, so each time
 // says which of the two is open.
 export async function availability(serviceIds: string[], date: string | null, exclude: string[] = []) {
   if (date) {
-    const slots = await rpc<{ start_time: string; wait: boolean; dropoff: boolean }[]>('available_slots', { p_service_ids: serviceIds, p_date: date, p_exclude: exclude });
-    return { times: (slots ?? []).map((r) => ({ time: r.start_time.slice(0, 5), wait: r.wait, dropoff: r.dropoff })) };
+    const slots = await rpc<{ start_time: string; wait: boolean; dropoff: boolean; wait_why: string | null; dropoff_why: string | null }[]>('available_slots', { p_service_ids: serviceIds, p_date: date, p_exclude: exclude });
+    // Rule codes only (never names or counts), so the page can say why a choice is closed.
+    return {
+      times: (slots ?? []).map((r) => ({
+        time: r.start_time.slice(0, 5), wait: r.wait, dropoff: r.dropoff,
+        ...(r.wait ? {} : { wait_why: publicReason(r.wait_why) }), ...(r.dropoff ? {} : { dropoff_why: publicReason(r.dropoff_why) }),
+      })),
+    };
   }
   const days = await rpc<string[]>('available_slot_days', { p_service_ids: serviceIds, p_exclude: exclude });
   return { days: days ?? [] };
