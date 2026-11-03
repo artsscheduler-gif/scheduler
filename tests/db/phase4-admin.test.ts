@@ -102,6 +102,20 @@ describe('Approval queue', () => {
   });
 });
 
+describe('Blocked time', () => {
+  it('staff block and unblock part of a day; it is audited', async () => {
+    const r = await call('block', { date: day, start_time: '13:00', end_time: '15:00', reason: 'Tech out' });
+    expect(r.status).toBe(200);
+    expect((await call('check', { date: day, kind: 'wait', start_time: '13:00', service_ids: [oil] })).body).toMatchObject({ violations: expect.arrayContaining(['blocked']) });
+    await expect(call('block', { date: day, start_time: '15:00', end_time: '13:00' })).rejects.toThrow(/after the start/);
+    const weekly = await call('block', { weekday: 5, start_time: '16:00', end_time: '17:30' });
+    expect((weekly.body as any).weekday).toBe(5);
+    await call('block', { id: (r.body as any).id, delete: true });
+    const rows = await sql`select action from arts.audit_log where entity = 'time_block' order by created_at`;
+    expect(rows.map((x) => x.action)).toEqual(['block.create', 'block.create', 'block.delete']);
+  });
+});
+
 describe('Overrides and phone bookings', () => {
   it('shows the broken rule and books only with an explicit override', async () => {
     await request({ kind: 'dropoff', start_time: '10:00', service_ids: [brakes] });

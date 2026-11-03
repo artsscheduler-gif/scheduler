@@ -59,16 +59,34 @@ describe.skipIf(!up)('Phase 4: admin console', () => {
     await page.locator('.blk').first().waitFor();
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-1-day.png`, fullPage: true });
 
+    // Block part of the day from the day view.
+    await page.getByRole('button', { name: 'Block time' }).click();
+    await page.locator('.block-form').getByLabel('From').fill('13:00');
+    await page.locator('.block-form').getByLabel('To', { exact: true }).fill('15:00');
+    await page.getByLabel(/Reason/).fill('Tech out');
+    await page.locator('.block-form').getByRole('button', { name: 'Block time' }).click();
+    await page.getByText(/Blocked: .*1:00pm–3:00pm · Tech out/).waitFor();
+    expect(await page.locator('.tl-block').count()).toBeGreaterThan(0);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-2-blocked.png`, fullPage: true });
+
     await page.getByRole('button', { name: 'Approve' }).click();
     await page.getByText('Nothing to approve.').waitFor();
     const [b] = await sql`select status from arts.bookings`;
     expect(b.status).toBe('confirmed');
 
-    for (const [path, text] of [['customers', 'Pick a customer.'], ['approvals', 'Approval ladder'], ['settings', 'Appointment types'], ['activity', 'Changes'], ['export', 'Export'], ['book', 'Phone booking']]) {
+    for (const [path, text] of [['customers', 'Pick a customer.'], ['approvals', 'Approval ladder'], ['settings', 'Services'], ['activity', 'Changes'], ['export', 'Export'], ['book', 'Phone booking']]) {
       await page.goto(`${BASE}/admin/${path}`);
       await page.getByText(text).first().waitFor();
       if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-${path}.png`, fullPage: true });
     }
+    // Services editor: change a time and save.
+    await page.goto(`${BASE}/admin/settings`);
+    const oilCard = page.locator('.svc-card', { has: page.locator('input[value="Oil change"]') });
+    await oilCard.getByLabel(/How long it takes/).fill('50');
+    await oilCard.getByRole('button', { name: 'Save' }).click();
+    await oilCard.getByText('Saved.').waitFor();
+    expect((await sql`select duration_minutes from arts.services where name = 'Oil change'`)[0].duration_minutes).toBe(50);
+
     await page.goto(`${BASE}/admin/customers`);
     await page.getByRole('checkbox', { name: /plate/ }).check();
     await page.getByLabel('Search customers').fill('ABC-12');

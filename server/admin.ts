@@ -340,6 +340,30 @@ async function closure(a: Admin, body: unknown): Promise<Result> {
   return { status: 200, body: data };
 }
 
+// Part-day blocks: one date, or every week on a weekday (1 = Monday).
+async function timeBlock(a: Admin, body: unknown): Promise<Result> {
+  const b = V.obj(body, ['id', 'date', 'weekday', 'start_time', 'end_time', 'reason', 'delete']);
+  if (b.delete) {
+    const id = V.uuid(b.id, 'id');
+    const { data: before } = await db().from('time_blocks').select('*').eq('id', id).single();
+    await db().from('time_blocks').delete().eq('id', id);
+    await audit(a, 'block.delete', 'time_block', id, before, null);
+    return { status: 200, body: { ok: true } };
+  }
+  const weekly = b.weekday !== undefined && b.weekday !== null;
+  const row = {
+    date: weekly ? null : V.date(b.date, 'date'),
+    weekday: weekly ? V.int(b.weekday, 'weekday', 1, 7) : null,
+    start_time: V.time(b.start_time, 'start_time'),
+    end_time: V.time(b.end_time, 'end_time'),
+    reason: V.str(b.reason, 'reason', { max: 100, optional: true }),
+  };
+  if (row.end_time <= row.start_time) throw new V.ValidationError('end_time', 'must be after the start');
+  const { data } = await db().from('time_blocks').insert(row).select('*').single();
+  await audit(a, 'block.create', 'time_block', data!.id, null, data);
+  return { status: 200, body: data };
+}
+
 async function reminderRule(a: Admin, body: unknown): Promise<Result> {
   const b = V.obj(body, ['id', 'step', 'channel', 'offset_days', 'condition', 'active', 'delete']);
   if (b.delete) {
@@ -409,6 +433,7 @@ export async function adminAction(req: Req, action: string, body: unknown): Prom
     case 'service': return upsertService(a, body);
     case 'level': return setLevel(a, body);
     case 'closure': return closure(a, body);
+    case 'block': return timeBlock(a, body);
     case 'rule': return reminderRule(a, body);
     case 'export': return exportCsv(a, body);
     case 'batch-approve': return approveBatch(a, body);

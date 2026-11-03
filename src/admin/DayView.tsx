@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent } from 'react';
+import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from 'react';
 import { useSearchParams, Link } from 'react-router';
 import { supabase } from '../lib/supabase';
 import { adminPost } from './api';
@@ -189,6 +189,54 @@ function BookingDetail({ b, s, onClose, onChanged }: { b: B; s: Settings; onClos
 
 // ---------------------------------------------------------------------------
 
+export interface Block { id: string; date: string | null; weekday: number | null; start_time: string; end_time: string; reason: string }
+
+const WEEKDAY = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+export const isoDow = (date: string) => new Date(`${date}T12:00:00Z`).getUTCDay() || 7;
+
+export function blockLabel(b: Block) {
+  const when = b.weekday ? `Every ${WEEKDAY[b.weekday]}` : formatDate(b.date!, { weekday: 'short', month: 'short', day: 'numeric' });
+  return `${when}, ${formatTime(b.start_time)}–${formatTime(b.end_time)}${b.reason ? ` · ${b.reason}` : ''}`;
+}
+
+// Block part of a day from online booking, once or every week.
+export function BlockForm({ date, onDone }: { date: string; onDone: () => void }) {
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function save(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const d = String(f.get('date'));
+    setBusy(true);
+    setErr('');
+    try {
+      await adminPost('block', {
+        ...(f.get('weekly') === 'on' ? { weekday: isoDow(d) } : { date: d }),
+        start_time: f.get('start_time'), end_time: f.get('end_time'), reason: f.get('reason'),
+      });
+      onDone();
+    } catch (x) {
+      setErr(String((x as Error).message));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <form className="block-form" onSubmit={save}>
+      <label>Day<input type="date" name="date" required defaultValue={date} /></label>
+      <div className="row">
+        <label>From<input type="time" name="start_time" required step={900} defaultValue="13:00" /></label>
+        <label>To<input type="time" name="end_time" required step={900} defaultValue="17:30" /></label>
+      </div>
+      <label>Reason <span className="muted small">(only staff see this)</span><input name="reason" maxLength={100} placeholder="Tech out, long job, meeting…" /></label>
+      <label className="check-row"><input type="checkbox" name="weekly" /> Repeat every week on this weekday</label>
+      <p className="help">Customers can’t book online during this time, and it comes off the day’s capacity. Bookings already in that time stay; you can still book over it by phone.</p>
+      {err && <p className="error">{err}</p>}
+      <button className="btn primary" disabled={busy}>{busy ? 'Saving…' : 'Block time'}</button>
+    </form>
+  );
+}
+
 export function DayView() {
   const { data: s } = useSettings();
   const [params, setParams] = useSearchParams();
@@ -197,6 +245,7 @@ export function DayView() {
   const [newAt, setNewAt] = useState<{ date: string; kind: 'wait' | 'dropoff'; start_time: string } | null>(null);
   const [dragMove, setDragMove] = useState<{ b: B; slot: any; violations: string[] } | null>(null);
   const [showCancelled, setShowCancelled] = useState(false);
+  const [blocking, setBlocking] = useState(false);
   const undoId = params.get('undo');
 
   useEffect(() => {
@@ -220,10 +269,16 @@ export function DayView() {
     return (await must(supabase.from('bookings').select(SELECT).eq('date', date).neq('status', 'replaced').neq('status', 'declined').order('start_time'))) as unknown as B[];
   }, [date]);
 
+  const blocks = useQuery(async () => {
+    if (!date) return [] as Block[];
+    return (await must(supabase.from('time_blocks').select('*').or(`date.eq.${date},weekday.eq.${isoDow(date)}`).order('start_time'))) as Block[];
+  }, [date]);
+
   function reloadAll() {
     requests.reload();
     undoable.reload();
     day.reload();
+    blocks.reload();
   }
 
   const layout = useMemo(() => {
@@ -240,11 +295,13 @@ export function DayView() {
       laneEnds[lane] = st + b.total_minutes;
       return { b, lane, st };
     });
-    const cap = hrs ? s.total_lanes * (hrs.close - hrs.open) : 0;
+    // Same as the server: blocked minutes come off the day's capacity.
+    const blocked = hrs ? (blocks.data ?? []).reduce((n, bl) => n + Math.max(0, Math.min(minutesOf(bl.end_time), hrs.close) - Math.max(minutesOf(bl.start_time), hrs.open)), 0) : 0;
+    const cap = hrs ? s.total_lanes * Math.max(0, hrs.close - hrs.open - blocked) : 0;
     const used = holding.reduce((n, b) => n + b.total_minutes, 0);
     const dropUsed = holding.filter((b) => b.kind === 'dropoff').reduce((n, b) => n + b.total_minutes, 0);
     return { hrs, placed, dropoffs: visible.filter((b) => b.kind === 'dropoff'), cap, used, dropUsed, dropCap: Math.floor((cap * s.dropoff_share_pct) / 100) };
-  }, [s, date, day.data, showCancelled]);
+  }, [s, date, day.data, blocks.data, showCancelled]);
 
   if (!s || !date) return <p className="loading">Loading…</p>;
 
@@ -328,6 +385,7 @@ export function DayView() {
           <button className="btn small" onClick={() => goto(todayIn(s.timezone))}>Today</button>
           <input type="date" value={date} onChange={(e) => e.target.value && goto(e.target.value)} aria-label="Go to date" />
           <label className="small"><input type="checkbox" checked={showCancelled} onChange={(e) => setShowCancelled(e.target.checked)} /> show cancelled</label>
+          <button className="btn small" onClick={() => setBlocking(true)}>Block time</button>
           {layout && layout.cap > 0 && (
             <div className="capacity push">
               <span>Booked <strong>{layout.used}</strong> / {layout.cap} min ({Math.round((100 * layout.used) / layout.cap)}%)</span>
@@ -335,6 +393,19 @@ export function DayView() {
             </div>
           )}
         </div>
+
+        {!!blocks.data?.length && (
+          <ul className="blocks-list">
+            {blocks.data.map((bl) => (
+              <li key={bl.id}>
+                <span>Blocked: {blockLabel(bl)}</span>
+                <button className="btn small" onClick={async () => { await adminPost('block', { id: bl.id, delete: true }); blocks.reload(); }}>
+                  {bl.weekday ? 'Remove (every week)' : 'Remove'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
         {!layout?.hrs ? (
           <p className="muted">Closed this day.</p>
@@ -358,6 +429,11 @@ export function DayView() {
                       onClick={(e) => { if (e.target === e.currentTarget) setNewAt({ date, kind: 'wait', start_time: minuteAt(e) }); }}
                       title="Click to book a waiter here"
                     >
+                      {blocks.data?.map((bl) => {
+                        const st = Math.max(minutesOf(bl.start_time), layout.hrs!.open);
+                        const en = Math.min(minutesOf(bl.end_time), layout.hrs!.close);
+                        return en > st && <div key={bl.id} className="tl-block" style={{ left: (st - layout.hrs!.open) * PPM, width: (en - st) * PPM }} title={blockLabel(bl)} />;
+                      })}
                       {layout.placed.filter((p) => p.lane === lane).map(({ b, st }) => (
                         <button
                           key={b.id}
@@ -400,6 +476,11 @@ export function DayView() {
       </section>
 
       {detail && <BookingDetail b={detail} s={s} onClose={() => setDetail(null)} onChanged={reloadAll} />}
+      {blocking && (
+        <Modal title="Block time" onClose={() => setBlocking(false)}>
+          <BlockForm date={date} onDone={() => { setBlocking(false); blocks.reload(); }} />
+        </Modal>
+      )}
       {newAt && (
         <Modal title="New booking" onClose={() => setNewAt(null)}>
           <BookingForm initial={newAt} onDone={() => { setNewAt(null); reloadAll(); }} />

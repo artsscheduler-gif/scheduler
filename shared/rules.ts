@@ -15,6 +15,7 @@ export function describeViolation(code: string): string {
     outside_hours: 'Outside shop hours',
     off_grid: 'Start time isn’t on the booking grid',
     waiter_lanes: 'All waiter lanes are taken at that time',
+    blocked: 'That time is blocked off',
     customer_limit: 'Customer already has the maximum number of future bookings',
     notes_too_long: 'Notes are too long',
     invalid_request: 'Request is missing a date or type',

@@ -16,7 +16,7 @@ import { formatPhone } from '../shared/phone.js';
 
 const SLOT_RULES = new Set([
   'closed', 'before_floor_date', 'lead_days', 'beyond_max_days', 'day_capacity', 'dropoff_share',
-  'not_wait_eligible', 'start_required', 'outside_hours', 'off_grid', 'waiter_lanes',
+  'not_wait_eligible', 'start_required', 'outside_hours', 'off_grid', 'waiter_lanes', 'blocked',
 ]);
 
 function slotProblem(violations: string[]) {

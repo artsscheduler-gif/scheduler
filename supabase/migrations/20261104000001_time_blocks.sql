@@ -1,0 +1,189 @@
+-- Time blocks: part of a day the shop can't take work (tech out, a long
+-- job, a weekly meeting). One-off blocks have a date; weekly ones have an
+-- ISO weekday (1 = Monday). Online booking avoids them, and their minutes
+-- come off the day's capacity. Staff can still book over them by override.
+
+create table arts.time_blocks (
+  id uuid primary key default gen_random_uuid(),
+  date date,
+  weekday int check (weekday between 1 and 7),
+  start_time time not null,
+  end_time time not null,
+  reason text not null default '',
+  created_at timestamptz not null default now(),
+  check ((date is null) <> (weekday is null)),
+  check (end_time > start_time)
+);
+create index time_blocks_date_idx on arts.time_blocks (date);
+
+alter table arts.time_blocks enable row level security;
+alter table arts.time_blocks force row level security;
+revoke all on arts.time_blocks from public, anon, authenticated;
+grant select on arts.time_blocks to authenticated;
+grant all on arts.time_blocks to service_role;
+create policy admin_read on arts.time_blocks for select to authenticated using (arts.is_admin());
+create policy service_all on arts.time_blocks for all to service_role using (true) with check (true);
+
+-- Blocked spans on a date, in minutes after midnight.
+create or replace function arts.day_blocks(p_date date) returns table (st int, en int)
+language sql stable set search_path = '' as $$
+  select extract(epoch from b.start_time)::int / 60, extract(epoch from b.end_time)::int / 60
+  from arts.time_blocks b
+  where b.date = p_date or b.weekday = extract(isodow from p_date)::int
+$$;
+revoke execute on function arts.day_blocks(date) from public, anon, authenticated;
+grant execute on function arts.day_blocks(date) to service_role;
+
+create or replace function arts.check_booking(
+  p_date date,
+  p_kind arts.booking_kind,
+  p_start time,
+  p_service_ids uuid[],
+  p_exclude uuid[] default '{}',
+  p_now timestamptz default now()
+) returns text[]
+language plpgsql stable set search_path = '' as $$
+declare
+  s arts.shop_settings;
+  v text[] := '{}'::text[];
+  today date;
+  hrs record;
+  job int;
+  cap int;
+  booked int;
+  drop_booked int;
+  start_min int;
+  max_overlap int;
+  svc record;
+  cnt int;
+  blocked int;
+begin
+  select * into s from arts.shop_settings where id = 1;
+  today := arts.today(p_now);
+  p_exclude := coalesce(p_exclude, '{}');
+
+  if p_service_ids is null or cardinality(p_service_ids) = 0 then
+    return array['no_services'];
+  end if;
+  if exists (
+    select 1 from unnest(p_service_ids) sid
+    left join arts.services sv on sv.id = sid
+    where sv.id is null or not sv.active
+  ) then
+    v := v || 'service_inactive'::text;
+  end if;
+
+  job := arts.job_minutes(p_service_ids);
+  select * into hrs from arts.day_hours(p_date);
+
+  -- Rule 5: date window, lead days, closures.
+  if hrs.open_min is null then
+    v := v || 'closed'::text;
+  end if;
+  if p_date < today + s.floor_days then
+    v := v || 'before_floor_date'::text;
+  end if;
+  if exists (
+    select 1 from arts.services sv
+    where sv.id = any(p_service_ids) and sv.lead_days is not null and p_date < today + sv.lead_days
+  ) then
+    v := v || 'lead_days'::text;
+  end if;
+  if p_date > today + s.max_days_ahead then
+    v := v || 'beyond_max_days'::text;
+  end if;
+
+  if hrs.open_min is not null then
+    -- Blocked time comes off the day's capacity.
+    select coalesce(sum(greatest(0, least(bl.en, hrs.close_min) - greatest(bl.st, hrs.open_min))), 0)
+      into blocked from arts.day_blocks(p_date) bl;
+    cap := s.total_lanes * greatest(0, hrs.close_min - hrs.open_min - blocked);
+    select coalesce(sum(b.total_minutes), 0), coalesce(sum(b.total_minutes) filter (where b.kind = 'dropoff'), 0)
+      into booked, drop_booked
+      from arts.bookings b
+      where b.date = p_date and arts.holding(b.status) and not (b.id = any(p_exclude));
+
+    -- Wait rule 3 / drop-off rule 2: day capacity.
+    if booked + job > cap then
+      v := v || 'day_capacity'::text;
+    end if;
+
+    if p_kind = 'dropoff' then
+      -- Drop-off rule 1: drop-off share of the day.
+      if drop_booked + job > floor(cap * s.dropoff_share_pct / 100.0) then
+        v := v || 'dropoff_share'::text;
+      end if;
+      -- Drop-off rule 3: a chosen drop-off time sits on the grid inside the
+      -- drop-off window and opening hours. No time (staff-entered) is allowed.
+      if p_start is not null then
+        start_min := extract(epoch from p_start)::int / 60;
+        if p_start < s.dropoff_window_start or p_start > s.dropoff_window_end
+           or start_min < hrs.open_min or start_min >= hrs.close_min then
+          v := v || 'outside_hours'::text;
+        end if;
+        if (start_min - hrs.open_min) % s.slot_step_minutes <> 0 then
+          v := v || 'off_grid'::text;
+        end if;
+        -- No drop-offs during blocked time.
+        if exists (select 1 from arts.day_blocks(p_date) bl where start_min >= bl.st and start_min < bl.en) then
+          v := v || 'blocked'::text;
+        end if;
+      end if;
+    else
+      -- Wait rule 1: every service wait-eligible.
+      if exists (select 1 from arts.services sv where sv.id = any(p_service_ids) and not sv.wait_eligible) then
+        v := v || 'not_wait_eligible'::text;
+      end if;
+      if p_start is null then
+        v := v || 'start_required'::text;
+      else
+        start_min := extract(epoch from p_start)::int / 60;
+        if start_min < hrs.open_min or start_min + job > hrs.close_min then
+          v := v || 'outside_hours'::text;
+        end if;
+        if (start_min - hrs.open_min) % s.slot_step_minutes <> 0 then
+          v := v || 'off_grid'::text;
+        end if;
+        -- A waiter's whole job stays clear of blocked time.
+        if exists (select 1 from arts.day_blocks(p_date) bl where start_min < bl.en and start_min + job > bl.st) then
+          v := v || 'blocked'::text;
+        end if;
+        -- Wait rule 2: concurrent waiters over the whole job span. The
+        -- maximum overlap occurs at the new start or at some existing start
+        -- inside the span.
+        with w as (
+          select extract(epoch from b.start_time)::int / 60 as st,
+                 extract(epoch from b.start_time)::int / 60 + b.total_minutes as en
+          from arts.bookings b
+          where b.date = p_date and b.kind = 'wait' and arts.holding(b.status)
+            and not (b.id = any(p_exclude))
+        ), pts as (
+          select start_min as pt
+          union
+          select w.st from w where w.st > start_min and w.st < start_min + job
+        )
+        select coalesce(max((select count(*) from w where w.st <= pts.pt and w.en > pts.pt)), 0)
+          into max_overlap from pts;
+        if max_overlap + 1 > s.waiter_lanes then
+          v := v || 'waiter_lanes'::text;
+        end if;
+      end if;
+    end if;
+  end if;
+
+  -- Rule 4: per-service daily caps.
+  for svc in
+    select sv.id, sv.name, sv.daily_cap from arts.services sv
+    where sv.id = any(p_service_ids) and sv.daily_cap is not null
+  loop
+    select count(distinct b.id) into cnt
+      from arts.bookings b join arts.booking_services bs on bs.booking_id = b.id
+      where b.date = p_date and bs.service_id = svc.id and arts.holding(b.status)
+        and not (b.id = any(p_exclude));
+    if cnt + 1 > svc.daily_cap then
+      v := v || ('daily_cap:' || svc.name);
+    end if;
+  end loop;
+
+  return v;
+end $$;

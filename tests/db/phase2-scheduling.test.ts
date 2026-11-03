@@ -197,6 +197,43 @@ describe('Availability', () => {
   });
 });
 
+describe('Time blocks', () => {
+  it('keeps waiters and drop-offs out of blocked time and shrinks the day', async () => {
+    await sql`insert into arts.time_blocks (date, start_time, end_time, reason) values (${day}, '13:00', '15:00', 'Tech out')`;
+    // Oil change (45 min) at 12:30 would run into the block.
+    expect(await check(day, 'wait', '12:30', ['Oil change'])).toContain('blocked');
+    expect(await check(day, 'wait', '12:00', ['Oil change'])).not.toContain('blocked');
+    expect(await check(day, 'wait', '15:00', ['Oil change'])).not.toContain('blocked');
+    expect(await check(day, 'dropoff', '13:30', ['Brakes'])).toContain('blocked');
+    expect(await check(day, 'dropoff', '15:00', ['Brakes'])).not.toContain('blocked');
+    const { data: slots } = await service.rpc('available_slots', { p_service_ids: [ids['Oil change']], p_date: day });
+    const times = (slots as any[]).map((r) => r.start_time);
+    expect(times).not.toContain('13:00:00');
+    expect(times).not.toContain('14:30:00');
+    expect(times).toContain('15:00:00');
+  });
+
+  it('weekly blocks apply on that weekday only', async () => {
+    const dow = new Date(`${day}T12:00:00Z`).getUTCDay() || 7;
+    await sql`insert into arts.time_blocks (weekday, start_time, end_time) values (${dow}, '07:30', '12:00')`;
+    expect(await check(day, 'wait', '09:00', ['Oil change'])).toContain('blocked');
+    expect(await check(addDaysIso(day, 1), 'wait', '09:00', ['Oil change'])).not.toContain('blocked');
+  });
+
+  it('a block that covers the whole day leaves no capacity', async () => {
+    await sql`insert into arts.time_blocks (date, start_time, end_time) values (${day}, '07:30', '17:30')`;
+    expect(await check(day, 'dropoff', null, ['Brakes'])).toContain('day_capacity');
+    const { data: days } = await service.rpc('available_slot_days', { p_service_ids: [ids.Brakes] });
+    expect(days).not.toContain(day);
+  });
+});
+
+function addDaysIso(d: string, n: number) {
+  const x = new Date(`${d}T12:00:00Z`);
+  x.setUTCDate(x.getUTCDate() + n);
+  return x.toISOString().slice(0, 10);
+}
+
 describe('Auto-confirm conditions', () => {
   async function returningCustomer() {
     const email = `returning-${Date.now()}@example.com`;

@@ -4,6 +4,7 @@ import { adminPost } from './api';
 import { must, useQuery, useServices, useSettings, type ServiceRow, type Settings as S } from './shared';
 import { DOW_KEYS, formatDate } from '../../shared/time';
 import { LEVEL_LABEL } from '../../shared/rules';
+import { BlockForm, blockLabel, type Block } from './DayView';
 
 type Kind = 'text' | 'int' | 'bool' | 'time' | 'email' | 'color';
 interface F { k: string; label: string; t: Kind; help?: string }
@@ -182,21 +183,52 @@ function ServiceEditor({ row, onSaved }: { row: Partial<ServiceRow>; onSaved: ()
       setMsg(String((err as Error).message));
     }
   }
+  const isNew = !row.id;
   return (
-    <form className="svc-row" onSubmit={save}>
-      <input name="sort_order" type="number" defaultValue={row.sort_order ?? 0} aria-label="Order" className="w4" />
-      <input name="name" defaultValue={row.name ?? ''} placeholder="New appointment type" required aria-label="Name" />
-      <input name="description" defaultValue={row.description ?? ''} placeholder="Short description" aria-label="Description" />
-      <label>min<input name="duration_minutes" type="number" defaultValue={row.duration_minutes ?? 60} className="w5" /></label>
-      <label className="check-row"><input type="checkbox" name="wait_eligible" defaultChecked={row.wait_eligible ?? false} /> wait</label>
-      <label>cap/day<input name="daily_cap" type="number" defaultValue={row.daily_cap ?? ''} className="w4" /></label>
-      <label>lead days<input name="lead_days" type="number" defaultValue={row.lead_days ?? ''} className="w4" /></label>
-      <label>remind (mo)<input name="reminder_interval_months" type="number" defaultValue={row.reminder_interval_months ?? ''} className="w4" /></label>
-      <input name="epicor_codes" defaultValue={(row.epicor_codes ?? []).join(', ')} placeholder="Epicor codes" aria-label="Epicor codes" className="w8" />
-      <label className="check-row"><input type="checkbox" name="active" defaultChecked={row.active ?? true} /> active</label>
-      <button className="btn small">{row.id ? 'Save' : 'Add'}</button>
-      {row.approval_level && <span className="muted small">{LEVEL_LABEL[row.approval_level]}</span>}
-      {msg && <span className="muted small">{msg}</span>}
+    <form className={`svc-card ${row.active === false ? 'off' : ''}`} onSubmit={save}>
+      <div className="svc-head">
+        <input name="name" defaultValue={row.name ?? ''} placeholder="Service name, e.g. Wheel alignment" required aria-label="Service name" className="svc-name" maxLength={60} />
+        <label className="check-row"><input type="checkbox" name="active" defaultChecked={row.active ?? true} /> Offered online</label>
+      </div>
+      <label className="svc-field">What customers see
+        <input name="description" defaultValue={row.description ?? ''} placeholder="One short line under the name" maxLength={200} />
+      </label>
+      <div className="svc-grid">
+        <label className="svc-field">How long it takes (min)
+          <input name="duration_minutes" type="number" min={5} max={600} step={5} required defaultValue={row.duration_minutes ?? 60} />
+          <span className="help">Shop time this job holds. Sets which times are open.</span>
+        </label>
+        <label className="svc-field">Most per day
+          <input name="daily_cap" type="number" min={0} defaultValue={row.daily_cap ?? ''} placeholder="No limit" />
+          <span className="help">Online bookings stop once this many are booked that day.</span>
+        </label>
+        <label className="svc-field">Extra notice (days)
+          <input name="lead_days" type="number" min={0} defaultValue={row.lead_days ?? ''} placeholder="Usual notice" />
+          <span className="help">For jobs that need parts ordered first.</span>
+        </label>
+        <label className="svc-field">Remind every (months)
+          <input name="reminder_interval_months" type="number" min={1} defaultValue={row.reminder_interval_months ?? ''} placeholder="No reminders" />
+          <span className="help">When to remind customers it’s due again.</span>
+        </label>
+      </div>
+      <label className="check-row"><input type="checkbox" name="wait_eligible" defaultChecked={row.wait_eligible ?? false} /> Customers can wait for this</label>
+      <details className="svc-more">
+        <summary>More</summary>
+        <div className="svc-grid">
+          <label className="svc-field">Position in the list
+            <input name="sort_order" type="number" min={0} defaultValue={row.sort_order ?? 0} />
+          </label>
+          <label className="svc-field">Epicor codes
+            <input name="epicor_codes" defaultValue={(row.epicor_codes ?? []).join(', ')} placeholder="e.g. OIL, LOF" />
+            <span className="help">Matches past service history from Epicor for reminders.</span>
+          </label>
+        </div>
+      </details>
+      <div className="svc-foot">
+        <button className="btn primary small">{isNew ? 'Add service' : 'Save'}</button>
+        {msg && <span className="muted small" role="status">{msg}</span>}
+        {row.approval_level && <span className="muted small push">Approval: {LEVEL_LABEL[row.approval_level]}</span>}
+      </div>
     </form>
   );
 }
@@ -231,6 +263,30 @@ function Closures() {
         <button className="btn small">Add closure</button>
       </form>
       <p className="help">Existing bookings on a new closure date are not cancelled automatically. Check the day view.</p>
+    </div>
+  );
+}
+
+function TimeBlocks() {
+  const today = new Date().toISOString().slice(0, 10);
+  const list = useQuery(() => must(supabase.from('time_blocks').select('*').or(`date.gte.${today},weekday.not.is.null`).order('weekday', { nullsFirst: false }).order('date').order('start_time')) as Promise<Block[]>);
+  const [adding, setAdding] = useState(false);
+  return (
+    <div className="settings-section">
+      <h2>Blocked time</h2>
+      <p className="help">Part of a day customers can’t book online, once or every week. Also available from the Block time button on the day view.</p>
+      {list.data?.length === 0 && <p className="muted small">Nothing blocked.</p>}
+      <ul className="blocks-list">
+        {list.data?.map((b) => (
+          <li key={b.id}>
+            <span>{blockLabel(b)}</span>
+            <button className="btn small danger" onClick={async () => { await adminPost('block', { id: b.id, delete: true }); list.reload(); }}>Remove</button>
+          </li>
+        ))}
+      </ul>
+      {adding
+        ? <BlockForm date={today} onDone={() => { setAdding(false); list.reload(); }} />
+        : <button className="btn small" onClick={() => setAdding(true)}>Block time</button>}
     </div>
   );
 }
@@ -273,13 +329,19 @@ export function Settings() {
   return (
     <div className="settings">
       <div className="settings-section">
-        <h2>Appointment types</h2>
-        <p className="help">These are the choices customers see. Free text never changes duration or type. Approval levels are moved on the Approvals page.</p>
-        {services.data?.map((r) => <ServiceEditor key={r.id} row={r} onSaved={services.reload} />)}
-        <ServiceEditor row={{}} onSaved={services.reload} />
+        <h2>Services</h2>
+        <p className="help">What customers can book, in this order. Changing a time affects new bookings only. Approval levels are set on the Approvals page.</p>
+        <div className="svc-cards">
+          {services.data?.map((r) => <ServiceEditor key={r.id} row={r} onSaved={services.reload} />)}
+        </div>
+        <details className="svc-add">
+          <summary className="btn small">+ Add a service</summary>
+          <ServiceEditor row={{}} onSaved={services.reload} />
+        </details>
       </div>
       <Hours s={s.data} onSaved={s.reload} />
       <Closures />
+      <TimeBlocks />
       {SECTIONS.map((sec) => <SettingsSection key={sec.title} {...sec} s={s.data!} onSaved={s.reload} />)}
       <ReminderRules />
     </div>
