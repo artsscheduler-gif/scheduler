@@ -1,5 +1,7 @@
 # Staging setup report
 
+> **Update 2026-11-04:** staging now runs at **https://arts.jvtestspace.com** (arts-staging.vercel.app still works). Current status and open items live in the admin's owner-only **Checklist** tab; this report records the original setup runs.
+
 **Run 2: 2026-11-02 (evening). Result: staging is live; smoke test 15 passed, 0 failed, 1 skipped.** It runs on Cloudflare's Turnstile test keys and the Lob stub until the real keys are in. Run 1 (earlier the same day) had no values at all; its details are in `SETUP_LOG.md`.
 
 | | |

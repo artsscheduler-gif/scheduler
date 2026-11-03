@@ -162,9 +162,9 @@ await check('6. Cron endpoint rejects requests without the secret', async () => 
   return a.status === 401 && b.status === 401 ? ['PASS', 'HTTP 401 / 401'] : ['FAIL', `HTTP ${a.status} / ${b.status}`];
 });
 
-await check('7. Health endpoint: database and providers reachable', async () => {
+await check('7. Health endpoint: database, providers and scheduled jobs', async () => {
   const h = await json('/api/health');
-  return h.status === 200 && h.body?.database && h.body?.email && h.body?.mail ? ['PASS', JSON.stringify(h.body)] : ['FAIL', `HTTP ${h.status} ${JSON.stringify(h.body)}`];
+  return h.status === 200 && h.body?.database && h.body?.email && h.body?.mail && h.body?.jobs ? ['PASS', JSON.stringify(h.body)] : ['FAIL', `HTTP ${h.status} ${JSON.stringify(h.body)}`];
 });
 
 // ---- 8. simulator flow ---------------------------------------------------------

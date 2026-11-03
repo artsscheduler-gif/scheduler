@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { api, ApiError, FALLBACK_PHONE, type OpenTime, type PublicConfig, type Service } from './api';
 import { formatDate, formatTime } from '../../shared/time';
 
@@ -140,6 +140,20 @@ export function ServicePicker({
   );
 }
 
+// ARIA radio-group keys: arrow keys move to the next enabled option and choose
+// it; only the chosen option (or the first) is in the Tab order.
+function radioKeys(e: KeyboardEvent<HTMLElement>) {
+  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+  if (!step) return;
+  const radios = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]:not([disabled])')];
+  const i = radios.indexOf(document.activeElement as HTMLButtonElement);
+  if (i < 0 || !radios.length) return;
+  e.preventDefault();
+  const next = radios[(i + step + radios.length) % radios.length];
+  next.focus();
+  next.click();
+}
+
 // Wait or drop off, for a time already picked. Only the ways that are open at
 // that time can be chosen; the other says why.
 export function KindPicker({
@@ -157,14 +171,14 @@ export function KindPicker({
     : picked.dropoff_why === 'blocked' ? `We can’t take a drop-off at ${at}. Pick another time to drop off.`
     : 'No drop-off spots left that day. Pick another day to drop off.';
   return (
-    <div className="choices" role="radiogroup" aria-label="Wait or drop off">
-      <button type="button" role="radio" aria-checked={value === 'wait'} disabled={!picked.wait} className={`choice ${value === 'wait' ? 'on' : ''}`} onClick={() => onChange('wait')}>
+    <div className="choices" role="radiogroup" aria-label="Wait or drop off" onKeyDown={radioKeys}>
+      <button type="button" role="radio" aria-checked={value === 'wait'} tabIndex={value === 'wait' || (!value && picked.wait) ? 0 : -1} disabled={!picked.wait} className={`choice ${value === 'wait' ? 'on' : ''}`} onClick={() => onChange('wait')}>
         <span className="choice-body">
           <span className="choice-title">Wait</span>
           <span className="choice-desc">{picked.wait ? `Come in at ${at} and wait at the shop while we work.` : waitWhy}</span>
         </span>
       </button>
-      <button type="button" role="radio" aria-checked={value === 'dropoff'} disabled={!picked.dropoff} className={`choice ${value === 'dropoff' ? 'on' : ''}`} onClick={() => onChange('dropoff')}>
+      <button type="button" role="radio" aria-checked={value === 'dropoff'} tabIndex={value === 'dropoff' || (!value && !picked.wait && picked.dropoff) ? 0 : -1} disabled={!picked.dropoff} className={`choice ${value === 'dropoff' ? 'on' : ''}`} onClick={() => onChange('dropoff')}>
         <span className="choice-body">
           <span className="choice-title">Drop off</span>
           <span className="choice-desc">{picked.dropoff ? `Drop it off at ${at}. We’ll call when it’s ready.` : dropWhy}</span>
@@ -187,6 +201,7 @@ export function SlotPicker({
   const [date, setDate] = useState<string | null>(value?.date ?? null);
   const [times, setTimes] = useState<OpenTime[] | null>(null);
   const timesRef = useRef<HTMLDivElement>(null);
+  const dayHeading = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     setDays(null);
@@ -198,7 +213,11 @@ export function SlotPicker({
     setTimes(null);
     api.times(serviceIds, date, token).then((r) => {
       setTimes(r.times);
-      requestAnimationFrame(() => timesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      // Move focus to the times so keyboard and screen-reader users land there too.
+      requestAnimationFrame(() => {
+        timesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        dayHeading.current?.focus({ preventScroll: true });
+      });
     }).catch(onOutage);
   }, [date, serviceIds.join(','), token]);
 
@@ -225,7 +244,7 @@ export function SlotPicker({
 
   return (
     <div className="slot-picker">
-      <table className="cal" role="grid" aria-label="Choose a day">
+      <table className="cal" aria-label="Choose a day">
         <thead>
           <tr>{['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <th key={i} scope="col">{d}</th>)}</tr>
         </thead>
@@ -244,7 +263,7 @@ export function SlotPicker({
                         {dayNum}
                       </button>
                     ) : (
-                      <span className="day off" aria-hidden="true">
+                      <span className="day off" aria-label={`${formatDate(d)}, not available`}>
                         {showMonth && <span className="mon">{formatDate(d, { month: 'short' })}</span>}
                         {dayNum}
                       </span>
@@ -259,11 +278,11 @@ export function SlotPicker({
 
       {date && (
         <div ref={timesRef} className="times-wrap">
-          <h3>{formatDate(date)}</h3>
+          <h3 tabIndex={-1} ref={dayHeading}>{formatDate(date)}</h3>
           {!times && <p className="loading">Loading times…</p>}
           {times && times.length === 0 && <p>That day just filled up. Pick another day.</p>}
           {times && times.length > 0 && (
-            <div role="radiogroup" aria-label="Time">
+            <div role="radiogroup" aria-label={`Time on ${formatDate(date)}`} onKeyDown={radioKeys}>
               {[
                 { label: 'Morning', group: times.filter((t) => t.time < '12:00') },
                 { label: 'Afternoon', group: times.filter((t) => t.time >= '12:00') },
@@ -274,7 +293,8 @@ export function SlotPicker({
                     {group.map((t) => {
                       const on = value?.date === date && value.time.time === t.time;
                       return (
-                        <button key={t.time} type="button" role="radio" aria-checked={on} className={`time ${on ? 'on' : ''}`} onClick={() => onChange({ date, time: t })}>
+                        <button key={t.time} type="button" role="radio" aria-checked={on}
+                          tabIndex={on || (!(value?.date === date) && t === times[0]) ? 0 : -1} className={`time ${on ? 'on' : ''}`} onClick={() => onChange({ date, time: t })}>
                           {formatTime(t.time)}
                         </button>
                       );

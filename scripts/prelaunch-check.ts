@@ -126,6 +126,65 @@ await step(`Email DNS for ${domain} (SPF, DKIM, DMARC)`, async () => {
   return missing.length ? ['FAIL', `missing ${missing.join(', ')}`] : ['PASS', ''];
 });
 
+// ---- Shop setup and operations ---------------------------------------------
+async function settings(): Promise<Record<string, any> | null> {
+  if (!E.SUPABASE_URL || !E.SUPABASE_SERVICE_ROLE_KEY) return null;
+  const res = await fetch(`${E.SUPABASE_URL}/rest/v1/shop_settings?id=eq.1&select=*`, {
+    headers: { apikey: E.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${E.SUPABASE_SERVICE_ROLE_KEY}`, 'Accept-Profile': 'arts' },
+  });
+  return res.ok ? ((await res.json()) as any[])[0] ?? null : null;
+}
+const s = await settings();
+const placeholder = (v: unknown) => !v || /^\[.*\]$/.test(String(v)) || /@example\.(com|org)$|\.invalid$/i.test(String(v));
+
+await step('Shop details are real (name, phone, address for email footers and postcards)', () => {
+  if (!s) return ['SKIP', 'could not read shop_settings'];
+  const bad = ['shop_name', 'shop_phone', 'shop_address'].filter((k) => placeholder(s[k]));
+  if (!/^(.*),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/.test(s.shop_address ?? '')) bad.push('shop_address format ("123 Main St, Town, PA 18000")');
+  return bad.length ? ['FAIL', bad.join(', ')] : ['PASS', s.shop_address];
+});
+
+await step('Staff and owner alert emails are real', () => {
+  if (!s) return ['SKIP', 'could not read shop_settings'];
+  const bad = ['staff_notify_email', 'owner_alert_email', 'from_email'].filter((k) => placeholder(s[k]));
+  return bad.length ? ['FAIL', bad.map((k) => `${k}=${s[k]}`).join(', ')] : ['PASS', `${s.staff_notify_email}, ${s.owner_alert_email}`];
+});
+
+await step('Service reminders are sending (dry run off)', () => {
+  if (!s) return ['SKIP', 'could not read shop_settings'];
+  return s.reminders_dry_run ? ['FAIL', 'reminders_dry_run is on: turn it off in Settings once the cutover review is done'] : ['PASS', ''];
+});
+
+await step('No staging email copies in production', () =>
+  E.EMAIL_DELIVER_TO ? ['FAIL', 'EMAIL_DELIVER_TO is set (staging-only)'] : ['PASS', '']);
+
+await step('Resend webhook configured (bounces and complaints)', () =>
+  (E.RESEND_WEBHOOK_SECRET ?? '').startsWith('whsec_') ? ['PASS', ''] : ['FAIL', 'RESEND_WEBHOOK_SECRET missing: see .env.example']);
+
+await step('Sending domain verified in Resend', async () => {
+  if (!E.RESEND_API_KEY) return ['SKIP', 'no RESEND_API_KEY'];
+  const from = String(s?.from_email ?? '').split('@')[1];
+  const res = await fetch('https://api.resend.com/domains', { headers: { Authorization: `Bearer ${E.RESEND_API_KEY}` } });
+  if (!res.ok) return ['SKIP', `Resend domains API HTTP ${res.status} (a sending-only key can't list domains; check the dashboard)`];
+  const domains = ((await res.json()) as { data?: { name: string; status: string }[] }).data ?? [];
+  const d = domains.find((x) => x.name === from);
+  return d?.status === 'verified' ? ['PASS', from] : ['FAIL', `${from || 'from_email domain'}: ${d ? d.status : 'not added in Resend'}`];
+});
+
+await step('Hourly job scheduled (pg_cron → /api/cron/tick)', async () => {
+  const ref = E.SUPABASE_URL?.match(/^https:\/\/([a-z0-9]+)\.supabase\.co/)?.[1];
+  if (!ref || !E.SUPABASE_ACCESS_TOKEN) return ['SKIP', 'set SUPABASE_ACCESS_TOKEN to check cron.job'];
+  const res = await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`, {
+    method: 'POST', headers: { Authorization: `Bearer ${E.SUPABASE_ACCESS_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: "select schedule, command from cron.job where command like '%/api/cron/tick%'" }),
+  });
+  if (!res.ok) return ['FAIL', `query HTTP ${res.status}`];
+  const rows = (await res.json()) as { schedule: string; command: string }[];
+  const host = E.APP_URL ? new URL(E.APP_URL).host : '';
+  const job = rows.find((r) => r.command.includes(host));
+  return job ? ['PASS', `${job.schedule} → ${host}`] : ['FAIL', rows.length ? `tick job points elsewhere, not ${host}` : 'no tick job in cron.job'];
+});
+
 const w = Math.max(...results.map((r) => r.name.length));
 for (const r of results) console.log(`${r.status.padEnd(4)}  ${r.name.padEnd(w)}  ${r.detail}`);
 const failed = results.filter((r) => r.status === 'FAIL').length;

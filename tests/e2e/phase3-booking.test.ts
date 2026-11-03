@@ -90,6 +90,24 @@ describe.skipIf(!up)('Phase 3: public booking on a 375px phone', () => {
     expect(await page.getByRole('radio', { name: /^Drop off/ }).getAttribute('aria-checked')).toBe('true');
   });
 
+  it('times and wait/drop-off work from the keyboard', async () => {
+    const page = await phone();
+    await page.goto(BASE);
+    await page.getByText('Oil change', { exact: true }).click();
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.locator('button.day').first().click();
+    await page.getByRole('radio', { name: '7:30am' }).waitFor();
+    // Focus lands on the day heading; Tab reaches the first time, arrows choose.
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe('H3');
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('ArrowRight');
+    expect(await page.getByRole('radio', { name: '8:00am' }).getAttribute('aria-checked')).toBe('true');
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.getByRole('radio', { name: /^Wait/ }).focus();
+    await page.keyboard.press('ArrowDown');
+    expect(await page.getByRole('radio', { name: /^Drop off/ }).getAttribute('aria-checked')).toBe('true');
+  });
+
   it('shows the phone fallback on a server error', async () => {
     const page = await phone();
     await page.route('**/api/availability?services=*', (r) => r.fulfill({ status: 503, body: '{"error":"unavailable"}' }));

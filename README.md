@@ -1,4 +1,4 @@
-# Art's Service Center: Booking & Reminders
+# Art's Servicenter: Booking & Reminders
 
 One web app that replaces Epicor Service CRM and the scheduler the shop never bought. It handles:
 
@@ -100,13 +100,14 @@ CI (`.github/workflows/ci.yml`) runs typecheck, audit, unit and DB tests, and th
 
 ## Staging (Outbox and Simulator)
 
-A staging copy (planned: `arts.jvtestspace.com`) runs the same code with three switches:
+A staging copy at **https://arts.jvtestspace.com** runs the same code with three switches:
 
 | Variable | Value | Effect |
 |---|---|---|
 | `APP_ENV` | `staging` | Server accepts the Outbox and Simulator admin actions. Without it they return 404. |
 | `EMAIL_PROVIDER` | `capture` | Every email is saved to `arts.email_outbox` instead of being sent. |
-| `VITE_APP_ENV` | `staging` | Build shows a red TEST SITE bar, adds `noindex`, and adds the **Outbox** and **Simulator** admin tabs. |
+| `VITE_APP_ENV` | `staging` | Build shows a red TEST SITE bar, adds `noindex`, and adds the **Test lab**, **Outbox** and **Simulator** admin tabs. |
+| `EMAIL_DELIVER_TO` | e.g. `artsscheduler@gmail.com` | Optional: these addresses also get a real `[TEST]` copy through Resend's test sender. |
 
 Use Turnstile test keys and `MAIL_PROVIDER=stub` (or a Lob `test_` key, which renders postcards in Lob's dashboard without mailing). **Never set any of these three in production.** `npm run prelaunch` fails if they are.
 
@@ -289,7 +290,9 @@ Everything here is in Admin, with no code and no Jake.
 | Mark completed, no-show, or cancelled | Day → click the booking. **Completed drives the next reminder.** |
 | Take a phone booking | **Phone booking** |
 | Close the shop for a holiday | Settings → Closures |
-| Change hours, lanes, drop-off window/share | Settings |
+| Change hours, lanes, earliest/latest drop-off time, drop-off share | Settings |
+| Block part of a day (once or weekly) | Day → Block time, or Settings → Blocked time |
+| Add/remove admins, reset an authenticator | Team (owner only) |
 | Add or edit appointment types (duration, caps, lead days, reminder interval) | Settings → Appointment types |
 | Move a type up or down the approval ladder | **Approvals** |
 | Approve the weekly postcard batch | **Postcards** |
@@ -318,7 +321,8 @@ Jake is emailed when the daily job fails, when send failures pass the threshold,
 
 Launch is blocked on the Open Items in the spec. In code terms:
 
-- [ ] Real appointment types, durations, caps, intervals, hours, lanes, and drop-off window/share entered in Settings
+- [ ] Real appointment types, durations, caps, intervals, hours, lanes, and earliest/latest drop-off time and share entered in Settings
+- [ ] Launch checklist in the admin (owner → Checklist) worked through; rerun `/audit` in Claude Code
 - [ ] Shop phone and address in Settings (the address must look like `123 Main St, Town, PA 18000` for postcards) and in `VITE_SHOP_PHONE`
 - [ ] Brand: logo URL and brand color in Settings; postcard template reviewed in Admin → Postcards
 - [ ] Chris invited (`admin:add`), and MFA enrolled for Chris and Jake

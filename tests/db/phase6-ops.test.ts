@@ -25,6 +25,15 @@ describe('Operations endpoints', () => {
 
   it('health reports reachability only', async () => {
     const r = await run(health, { url: '/api/health' });
-    expect(r).toEqual({ status: 200, body: { ok: true, database: true, email: true, mail: true } });
+    expect(r).toEqual({ status: 200, body: { ok: true, database: true, email: true, mail: true, jobs: true } });
+  });
+
+  it('health fails when a scheduled job has stopped running', async () => {
+    await sql`delete from arts.job_runs`;
+    await sql`insert into arts.job_runs (job, status, started_at) values ('tick', 'ok', now() - interval '5 hours')`;
+    const r = await run(health, { url: '/api/health' });
+    expect(r).toMatchObject({ status: 503, body: { ok: false, jobs: false } });
+    await sql`insert into arts.job_runs (job, status) values ('tick', 'ok')`;
+    expect((await run(health, { url: '/api/health' })).status).toBe(200);
   });
 });
