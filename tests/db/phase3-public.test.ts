@@ -161,7 +161,9 @@ describe('Manage link', () => {
     const t = await tokenFor(b.email);
     expect((await postCancel({ t })).body).toMatchObject({ ok: true });
     expect(await checkSlot(day, '09:00')).toEqual([]);
-    expect(StubEmailProvider.outbox.some((m) => m.to === b.email && m.subject === 'Your appointment is cancelled')).toBe(true);
+    const cancelMail = StubEmailProvider.outbox.find((m) => m.to === b.email && m.subject === 'Your appointment is cancelled');
+    // The cancel email removes the event from the customer's calendar.
+    expect(Buffer.from(cancelMail!.attachments![0].content, 'base64').toString()).toContain('METHOD:CANCEL');
     expect(StubEmailProvider.outbox.some((m) => m.to === 'chris@example.com' && m.subject.startsWith('Cancelled'))).toBe(true);
     const [a] = await sql`select actor_type from arts.audit_log where action = 'booking.cancelled'`;
     expect(a.actor_type).toBe('customer');

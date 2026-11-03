@@ -5,7 +5,7 @@ import { db, getSettings, rpc } from './db.js';
 import { env } from './env.js';
 import { HttpError, type Req, type Result } from './http.js';
 import * as V from './validate.js';
-import { loadBooking, notifyCreated, sendConfirmation, toView, manageLink } from './bookings.js';
+import { cancelAttachment, loadBooking, notifyCreated, sendConfirmation, toView, manageLink } from './bookings.js';
 import { sendEmail } from './email/send.js';
 import * as T from './email/templates.js';
 import { normalizePhone, normalizeEmail } from '../shared/phone.js';
@@ -165,7 +165,7 @@ async function setStatus(a: Admin, body: unknown): Promise<Result> {
   if (b.status === 'cancelled' && b.notify !== false) {
     const s = await getSettings();
     const l = (await loadBooking(id))!;
-    await sendEmail(s, { kind: 'booking_cancelled', to: l.customer.email, ...T.cancelledEmail(s, toView(l)), bookingId: id, customerId: l.customer.id });
+    await sendEmail(s, { kind: 'booking_cancelled', to: l.customer.email, ...T.cancelledEmail(s, toView(l)), bookingId: id, customerId: l.customer.id, attachments: cancelAttachment(s, l) });
   }
   return { status: 200, body: r };
 }

@@ -7,7 +7,7 @@ import * as V from './validate.js';
 import { verifyTurnstile } from './turnstile.js';
 import { verifyToken, type ManageToken, type UnsubToken } from './tokens.js';
 import {
-  availability, loadBooking, notifyCreated, publicConfig, rootVersions, toView, withinCutoff,
+  availability, cancelAttachment, loadBooking, notifyCreated, publicConfig, rootVersions, toView, withinCutoff,
   appointmentStart, type BookingRow,
 } from './bookings.js';
 import { sendEmail } from './email/send.js';
@@ -163,7 +163,7 @@ export async function postCancel(body: unknown): Promise<Result> {
   const l = (await loadBooking(shown.id))!;
   await rpc('cancel_root', { p_root: r.rootId, p_actor: customerActor(l) });
   try {
-    await sendEmail(s, { kind: 'booking_cancelled', to: l.customer.email, ...T.cancelledEmail(s, toView(l)), bookingId: shown.id, customerId: l.customer.id });
+    await sendEmail(s, { kind: 'booking_cancelled', to: l.customer.email, ...T.cancelledEmail(s, toView(l)), bookingId: shown.id, customerId: l.customer.id, attachments: cancelAttachment(s, l) });
     await sendEmail(s, {
       kind: 'staff_cancel',
       to: s.staff_notify_email,

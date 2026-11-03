@@ -93,18 +93,31 @@ function staffDetails(s: ShopSettings, l: LoadedBooking): [string, string][] {
   return d;
 }
 
+// The appointment as a calendar event: waiters for the job's length, a timed
+// drop-off as a 30-minute slot, an untimed drop-off across the drop-off window.
+function calendarFile(s: ShopSettings, l: LoadedBooking, description: string, cancel = false) {
+  const b = l.booking;
+  const windowMin = (Date.parse(`2000-01-01T${s.dropoff_window_end}`) - Date.parse(`2000-01-01T${s.dropoff_window_start}`)) / 60_000;
+  return buildIcs({
+    uid: b.root_id,
+    start: appointmentStart(s, b),
+    minutes: b.kind === 'wait' ? b.total_minutes : b.start_time ? 30 : Math.max(30, windowMin),
+    summary: `${s.shop_name}: ${l.services.map((x) => x.name).join(', ')}`,
+    description, location: s.shop_address, cancel,
+  });
+}
+
+// Attachment that removes the appointment from the customer's calendar.
+export function cancelAttachment(s: ShopSettings, l: LoadedBooking) {
+  const ics = calendarFile(s, l, `Cancelled. Call ${s.shop_phone} to book again.`, true);
+  return [{ filename: 'cancel.ics', content: Buffer.from(ics).toString('base64'), contentType: 'text/calendar; method=CANCEL' }];
+}
+
 export async function sendConfirmation(s: ShopSettings, l: LoadedBooking, kind: 'confirmed' | 'proposed' = 'confirmed', note: string | null = null) {
   const link = manageLink(s, l.booking);
   const view = toView(l);
   const r = kind === 'proposed' ? T.proposedEmail(s, view, link, note) : T.confirmedEmail(s, view, link);
-  const ics = buildIcs({
-    uid: l.booking.root_id,
-    start: appointmentStart(s, l.booking),
-    minutes: l.booking.kind === 'wait' ? l.booking.total_minutes : 30,
-    summary: `${s.shop_name}: ${view.services.join(', ')}`,
-    description: `${T.whenText(s, l.booking)}\nChange or cancel: ${link}\n${s.shop_phone}`,
-    location: s.shop_address,
-  });
+  const ics = calendarFile(s, l, `${T.whenText(s, l.booking)}\nChange or cancel: ${link}\n${s.shop_phone}`);
   const ok = await sendEmail(s, {
     kind: kind === 'proposed' ? 'booking_proposed' : 'booking_confirmed',
     to: l.customer.email,
