@@ -45,6 +45,14 @@ const TASKS: Topic[] = [
     body: <p>On <b>Day</b>, click the booking. Use <b>Mark completed</b> (this starts the clock for that customer’s next service reminder), <b>No-show</b>, or <b>Cancel</b> (emails the customer). <b>Reopen as confirmed</b> undoes these, and checks the time is still free first.</p>,
   },
   {
+    id: 'task-find', title: 'Find a booking',
+    body: <p>On <b>Day</b>, type a name, phone number or email into <b>Find a booking</b> at the top. Click a result to jump to that day with the booking open.</p>,
+  },
+  {
+    id: 'task-print', title: 'Print the day’s schedule',
+    body: <p>On <b>Day</b>, go to the date and click <b>Print day</b>. You get a plain list: time, wait or drop-off, customer, phone, vehicle, services and notes.</p>,
+  },
+  {
     id: 'task-move', title: 'Move a booking',
     body: <p>Drag it to a new time on the Day timeline (or into the Drop-offs box), then choose <b>Move and email customer</b> or <b>Move, don’t email</b>. Or click it and use <b>Move</b> to pick any date and time.</p>,
   },
@@ -60,7 +68,8 @@ const TABS: Topic[] = [
           <li><b>Waiting for you</b>: requests to approve, propose a new time for, or decline. Change requests show the old and new time side by side. Auto-confirmed bookings you can still undo are listed under it.</li>
           <li><b>The timeline</b>: one row per lane. Waiters are placed at their time; yellow = requested (holding the slot), blue = confirmed. Grey striped bands are blocked time. Click an empty spot to book a waiter there.</li>
           <li><b>Drop-offs</b>: the cars being dropped off that day, with their drop-off time.</li>
-          <li><b>Top bar</b>: change day with the arrows, <b>Today</b>, or the date box. <b>Block time</b> blocks part of the day. The capacity numbers show how full the day is.</li>
+          <li><b>Find a booking</b>: search by name, phone or email across all dates.</li>
+          <li><b>Top bar</b>: change day with the arrows, <b>Today</b>, or the date box. <b>Block time</b> blocks part of the day; <b>Print day</b> prints the schedule. The capacity numbers show how full the day is.</li>
         </ul>
         <p>The page refreshes itself every minute, so it’s safe to leave open on the shop iPad.</p>
       </>
@@ -74,7 +83,9 @@ const TABS: Topic[] = [
         <li>Search by name, phone or email; tick <b>plate</b> to search by license plate.</li>
         <li>Open a customer to edit their details, vehicles, and contact preferences (email/mail opt-out, bounced, address undeliverable, “always review their bookings”).</li>
         <li>See their bookings, service history and the reminders they were sent.</li>
-        <li><b>Merge into this customer</b> combines a duplicate record into this one. This can’t be undone, so check it’s really the same person.</li>
+        <li><b>Merge into this customer</b> combines a duplicate record into this one. If it was a mistake, <b>Undo merge</b> on the same page puts both records back.</li>
+        <li>Click a booking’s date to open it on the Day view. <b>Delete</b> next to a vehicle removes a sold car and its service history, so reminders for it stop.</li>
+        <li><b>Forget this customer</b> (bottom of the page) is for someone who asks to be removed: their details, vehicles and history are deleted and upcoming appointments cancelled. It can’t be undone.</li>
       </ul>
     ),
   },
@@ -94,7 +105,7 @@ const TABS: Topic[] = [
   },
   {
     id: 'tab-postcards', title: 'Postcards',
-    body: <p>Service-due reminder postcards collect here each week. Review the batch and click <b>Approve and send</b> to mail them (each postcard costs money). <b>Template</b> edits the front and back design. <b>Past batches</b> shows what was mailed.</p>,
+    body: <p>Service-due reminder postcards collect here each week. Review the batch and click <b>Approve and send</b> to mail them (each postcard costs money). A big batch may stop partway; click <b>Continue sending</b> to finish it (nothing is mailed twice). <b>Template</b> edits the front and back design. <b>Past batches</b> shows what was mailed.</p>,
   },
   {
     id: 'tab-settings', title: 'Settings',
@@ -113,11 +124,15 @@ const TABS: Topic[] = [
   },
   {
     id: 'tab-activity', title: 'Activity',
-    body: <p>A record of everything that happened: <b>Changes</b> (who changed what, before and after), <b>Reminders</b> sent, <b>Emails</b> sent and whether they failed, and <b>Scheduled jobs</b> (the daily and hourly runs, with any errors).</p>,
+    body: <p>A record of everything that happened: <b>Changes</b> (who changed what, before and after), <b>Reminders</b> sent, <b>Emails</b> sent and whether they failed, and <b>Scheduled jobs</b> (the daily and hourly runs, with any errors). Type in the filter box to narrow any list; <b>Show older</b> loads more. Times are shop time.</p>,
   },
   {
     id: 'tab-export', title: 'Export',
     body: <p>Download customers, vehicles, service history, bookings, or services as a spreadsheet (CSV). Contains customer personal information: store it carefully.</p>,
+  },
+  {
+    id: 'tab-team', title: 'Team', who: 'Owner only',
+    body: <p>Who can sign in. <b>Send invite</b> emails a set-password link (and shows it so you can text it too). <b>Reset authenticator</b> is for a lost or new phone: they scan a new QR code at their next sign-in. <b>Make owner/staff</b> changes what they can see; <b>Remove</b> stops them signing in. The last owner can’t be removed.</p>,
   },
   {
     id: 'tab-checklist', title: 'Checklist', who: 'Owner only',
@@ -150,7 +165,7 @@ function Section({ t }: { t: Topic }) {
 }
 
 export function Help({ owner }: { owner: boolean }) {
-  const tabs = [...TABS.filter((t) => owner || t.id !== 'tab-checklist'), ...(STAGING ? STAGING_TABS : [])];
+  const tabs = [...TABS.filter((t) => owner || !['tab-checklist', 'tab-team'].includes(t.id)), ...(STAGING ? STAGING_TABS : [])];
   return (
     <div className="help-page">
       <h2>How to use the admin</h2>

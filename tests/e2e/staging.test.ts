@@ -137,6 +137,11 @@ describe.skipIf(!staging)('Staging: simulator and outbox', () => {
     expect((await sql`select done from arts.audit_items where key = 'e2e-item'`)[0].done).toBe(true);
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/staging-4-checklist.png`, fullPage: true });
     await sql`delete from arts.audit_items where key = 'e2e-item'`;
+
+    // Owner-only Team page lists admins.
+    await page.getByRole('link', { name: 'Team' }).click();
+    await page.getByRole('heading', { name: 'Team' }).waitFor();
+    await page.getByText('You', { exact: true }).waitFor();
     expect(errors).toEqual([]);
   }, 120000);
 });

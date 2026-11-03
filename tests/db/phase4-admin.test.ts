@@ -263,6 +263,26 @@ describe('Removing vehicles and customers', () => {
   });
 });
 
+describe('Team', () => {
+  it('owner invites, changes role, resets authenticator and removes; staff cannot', async () => {
+    await expect(call('team-list', {})).rejects.toMatchObject({ status: 403 });
+    const { token: ownerTok, userId: ownerId } = await adminToken('owner');
+    const owner = (action: string, body: unknown) => adminAction(reqWith(ownerTok), action, body);
+    const email = `new-staff-${Date.now()}@example.com`;
+    const inv = await owner('team-invite', { email, name: 'New Staff', role: 'staff' });
+    expect((inv.body as any).link).toMatch(/^https?:\/\//);
+    expect(StubEmailProvider.outbox.some((m) => m.to === email)).toBe(true);
+    const list = (await owner('team-list', {})).body as any;
+    const m = list.members.find((x: any) => x.email === email);
+    expect(m).toMatchObject({ role: 'staff', invited: true, mfa: false });
+    expect((await owner('team-role', { user_id: m.id, role: 'owner' })).status).toBe(200);
+    expect((await owner('team-reset-mfa', { user_id: m.id })).body).toMatchObject({ ok: true, removed: 0 });
+    await expect(owner('team-remove', { user_id: ownerId })).rejects.toMatchObject({ status: 409 });
+    expect((await owner('team-remove', { user_id: m.id })).status).toBe(200);
+    expect(((await owner('team-list', {})).body as any).members.some((x: any) => x.email === email)).toBe(false);
+  });
+});
+
 describe('Export', () => {
   it('round-trips: every row and field comes back out', async () => {
     await request({ customer_notes: 'Line one, "quoted"\nline two' });

@@ -14,6 +14,7 @@ import { Simulator } from './Simulator';
 import { Lab } from './Lab';
 import { Checklist } from './Checklist';
 import { Help } from './Help';
+import { Team } from './Team';
 import { STAGING } from '../lib/env';
 
 const NAV: [string, string][] = [
@@ -57,7 +58,7 @@ export default function AdminApp() {
           <header className="admin-top">
             <strong className="admin-brand">Art’s Servicenter</strong>
             <nav aria-label="Admin">
-              {[...NAV, ...(session.user.app_metadata?.role === 'owner' ? [['/admin/checklist', 'Checklist']] as [string, string][] : []), ['/admin/help', 'Help'] as [string, string]].map(([to, label]) => (
+              {[...NAV, ...(session.user.app_metadata?.role === 'owner' ? [['/admin/team', 'Team'], ['/admin/checklist', 'Checklist']] as [string, string][] : []), ['/admin/help', 'Help'] as [string, string]].map(([to, label]) => (
                 <NavLink key={to} to={to} end={to === '/admin'} className={({ isActive }) => (isActive ? 'on' : '')}>{label}</NavLink>
               ))}
             </nav>
@@ -79,6 +80,7 @@ export default function AdminApp() {
               {STAGING && <Route path="simulator" element={<Simulator />} />}
               {STAGING && <Route path="lab" element={<Lab />} />}
               {session.user.app_metadata?.role === 'owner' && <Route path="checklist" element={<Checklist />} />}
+              {session.user.app_metadata?.role === 'owner' && <Route path="team" element={<Team />} />}
               <Route path="help" element={<Help owner={session.user.app_metadata?.role === 'owner'} />} />
             </Routes>
           </main>

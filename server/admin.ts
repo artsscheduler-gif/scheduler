@@ -3,6 +3,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { db, getSettings, rpc } from './db.js';
 import { env } from './env.js';
+import { teamAction } from './team.js';
 import { HttpError, type Req, type Result } from './http.js';
 import * as V from './validate.js';
 import { cancelAttachment, loadBooking, notifyCreated, sendConfirmation, toView, manageLink } from './bookings.js';
@@ -476,6 +477,7 @@ async function resendManage(a: Admin, body: unknown): Promise<Result> {
 export async function adminAction(req: Req, action: string, body: unknown): Promise<Result> {
   const a = await requireAdmin(req);
   if (action.startsWith('sim-') || action === 'outbox-clear') return simulatorAction(a, action, body);
+  if (action.startsWith('team-')) return teamAction(a, action, body);
   switch (action) {
     case 'decide': return decide(a, body);
     case 'check': return check(body);
