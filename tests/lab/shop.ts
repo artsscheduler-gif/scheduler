@@ -359,26 +359,33 @@ export class Shop {
     else this.find('Chris couldn’t move a booking to a time the system listed as open', `${day} ${slot.start_time}: ${res.violations.join(', ')}`);
   }
 
-  // Chris blocks time or closes a day without looking at what's booked.
+  // Chris blocks time or closes a day. If bookings are already there he's
+  // shown them first, and sometimes saves anyway.
   async chrisChangesTheCalendar(what: 'block' | 'closure') {
     const r = this.rng;
     let date = addDays(this.clock.date, r.int(3, 21));
     while (!this.s.hours[(['', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const)[isoDow(date)] as keyof ShopSettings['hours']]) date = addDays(date, 1);
     const before = (await checkScheduling({ fromDate: date })).filter((x) => x.detail.startsWith(date)).length;
-    if (what === 'block') {
-      const st = r.pick([8 * 60, 10 * 60, 12 * 60, 14 * 60]);
-      await timeBlock(CHRIS, { date, start_time: hhmm(st), end_time: hhmm(st + r.pick([60, 120, 180])), reason: 'Parts run' });
-      this.count('chris: blocked time');
-    } else {
-      await closure(CHRIS, { start_date: date, end_date: date, reason: 'Family event' });
-      this.count('chris: closed a day');
+    const st = r.pick([8 * 60, 10 * 60, 12 * 60, 14 * 60]);
+    const body = what === 'block'
+      ? { date, start_time: hhmm(st), end_time: hhmm(st + r.pick([60, 120, 180])), reason: 'Parts run' }
+      : { start_date: date, end_date: date, reason: 'Family event' };
+    const save = (extra = {}) => (what === 'block' ? timeBlock(CHRIS, { ...body, ...extra }) : closure(CHRIS, { ...body, ...extra }));
+    let res = await save();
+    const warned = res.status === 409 && (res.body as any).error === 'bookings_affected';
+    if (warned) {
+      this.count(`chris: warned about bookings before ${what === 'block' ? 'blocking time' : 'closing'}`);
+      if (r.chance(0.4)) return; // thinks better of it
+      res = await save({ confirm: true });
     }
-    const after = await checkScheduling({ fromDate: date });
-    const hit = after.filter((x) => x.detail.startsWith(date));
+    this.count(what === 'block' ? 'chris: blocked time' : 'chris: closed a day');
+    const hit = (await checkScheduling({ fromDate: date })).filter((x) => x.detail.startsWith(date));
     if (hit.length > before) {
       this.ctx.exemptDays.add(date);
-      const [{ n }] = await sql`select count(*)::int as n from arts.bookings where date = ${date}::date and status in ('requested', 'confirmed')`;
-      this.find(`Chris ${what === 'block' ? 'blocked time' : 'closed a day'} over existing bookings, with no warning`, `${date}: ${n} booking(s) already there (${hit.map((h) => h.rule).join(', ')})`);
+      if (!warned) {
+        const [{ n }] = await sql`select count(*)::int as n from arts.bookings where date = ${date}::date and status in ('requested', 'confirmed')`;
+        this.find(`Chris ${what === 'block' ? 'blocked time' : 'closed a day'} over existing bookings, with no warning`, `${date}: ${n} booking(s) already there (${hit.map((h) => h.rule).join(', ')})`);
+      }
     }
   }
 
@@ -503,10 +510,12 @@ export class Shop {
       this.find('the same car appears twice on one customer', `${r.name}: ${r.year} ${r.model} × ${r.n}`);
     }
     for (const r of await sql`
-      select c.name, h.service_date::text as d, s.name as svc, count(*)::int as n
+      select c.name, h.service_date::text as d, s.name as svc, count(*)::int as n, bool_and(h.booking_id is not null) as booked
       from arts.service_history h join arts.customers c on c.id = h.customer_id join arts.services s on s.id = h.service_id
-      where c.merged_into is null group by c.id, c.name, h.service_date, s.name having count(*) > 1`) {
-      this.find('the same visit appears twice in a customer’s history', `${r.name}: ${r.svc} on ${r.d} × ${r.n}`);
+      where c.merged_into is null group by c.id, c.name, h.vehicle_id, h.service_date, s.name having count(*) > 1`) {
+      // Two bookings of their own the same day is a customer booking twice, not an import copy.
+      if (r.booked) this.find('a customer booked the same service twice for one day (and both were done)', `${r.name}: ${r.svc} on ${r.d}`);
+      else this.find('the same visit appears twice in a customer’s history', `${r.name}: ${r.svc} on ${r.d} × ${r.n}`);
     }
     for (const r of await sql`
       select c.name, count(*)::int as n from arts.reminder_sends r1 join arts.customers c on c.id = r1.customer_id

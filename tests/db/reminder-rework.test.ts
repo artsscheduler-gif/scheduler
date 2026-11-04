@@ -7,7 +7,7 @@ import { sql, resetData, serviceId } from './helpers';
 import { daily, planServiceReminders, runServiceReminders, today, continueDaily } from '../../server/reminders';
 import { runJob, tick } from '../../server/jobs';
 import { getSettings } from '../../server/db';
-import { StubEmailProvider } from '../../server/email/provider';
+import { StubEmailProvider, setEmailProvider } from '../../server/email/provider';
 import { handleResendWebhook, verifySvix } from '../../server/email/webhook';
 import { oneClickUnsubscribeUrl } from '../../server/tokens';
 import unsubscribe from '../../api/unsubscribe';
@@ -117,6 +117,43 @@ describe('Sending', () => {
     await runServiceReminders(s, today(s));
     expect(StubEmailProvider.outbox[0].idempotencyKey).toBe(first);
   });
+});
+
+describe('Batch sending', () => {
+  it('sends reminders to the provider in groups, and a failed group is retried later', async () => {
+    await sql`insert into arts.customers (name, email, source)
+      select 'Group ' || g, 'group' || g || '@example.com', 'import' from generate_series(1, 120) g`;
+    await sql`insert into arts.service_history (customer_id, service_id, service_date, source)
+      select id, ${oil}, (arts.today() + 10 - make_interval(months => 6))::date, 'import' from arts.customers`;
+    const calls: number[] = [];
+    let failFirst = true;
+    const batching = new StubEmailProvider() as StubEmailProvider & { sendBatch: (m: any[]) => Promise<any[]> };
+    batching.sendBatch = async (msgs) => {
+      if (failFirst) {
+        failFirst = false;
+        throw new Error('provider down');
+      }
+      calls.push(msgs.length);
+      expect(new Set(msgs.map((m) => m.idempotencyKey)).size).toBe(msgs.length);
+      return msgs.map((_, i) => ({ id: `b${calls.length}-${i}`, costCents: 0 }));
+    };
+    setEmailProvider(batching);
+    try {
+      const s = await live();
+      // The first call fails; the automatic retry goes through.
+      const r = await runServiceReminders(s, today(s));
+      expect(r.emailed).toBe(120);
+      expect(calls).toEqual([50, 50, 20]);
+      batching.sendBatch = async () => { throw new Error('provider down'); };
+      await sql`update arts.reminder_sends set status = 'failed', provider_id = null`;
+      const again = await runServiceReminders(s, today(s));
+      expect(again.failed).toBe(120);
+      const [{ n }] = await sql`select count(*)::int as n from arts.reminder_sends where status = 'failed'`;
+      expect(n).toBe(120);
+    } finally {
+      setEmailProvider(null);
+    }
+  }, 60000);
 });
 
 describe('Escalations', () => {

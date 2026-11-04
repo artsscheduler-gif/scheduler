@@ -213,9 +213,11 @@ const person = fc.record({
   mail_opt_out: fc.boolean(),
   email_bounced: fc.boolean(),
   cars: fc.integer({ min: 0, max: 2 }),
+  shout: fc.boolean(), // types the car the TRACS way: FORD ESCAPE
   bookings: fc.integer({ min: 0, max: 2 }),
   visits: fc.integer({ min: 0, max: 3 }),
-  reminders: fc.integer({ min: 0, max: 1 }),
+  visitsFromBookings: fc.boolean(),
+  reminders: fc.integer({ min: 0, max: 2 }),
 });
 
 describe('customer merge', () => {
@@ -224,6 +226,8 @@ describe('customer merge', () => {
     const oil = (await sql`select id from arts.services where name = 'Oil change'`)[0].id;
     let n = 0;
     await fc.assert(fc.asyncProperty(person, person, async (a, b) => {
+      // Both records often hold the same car and the same visits, typed
+      // differently: the merge folds those together and the undo must split them again.
       const make = async (p: typeof a, tag: string) => {
         const i = ++n;
         const [c] = await sql`insert into arts.customers ${sql({
@@ -232,24 +236,31 @@ describe('customer merge', () => {
           epicor_id: p.epicor ? `E${i}` : null, email_opt_out: p.email_opt_out, mail_opt_out: p.mail_opt_out, email_bounced: p.email_bounced, source: 'import',
         })} returning id`;
         const cars: string[] = [];
-        for (let k = 0; k < p.cars; k++) cars.push((await sql`insert into arts.vehicles (customer_id, year, make, model) values (${c.id}, ${2010 + k}, 'Ford', 'Escape') returning id`)[0].id);
-        for (let k = 0; k < p.visits; k++) await sql`insert into arts.service_history (customer_id, vehicle_id, service_id, service_date, source) values (${c.id}, ${cars[k % (cars.length || 1)] ?? null}, ${oil}, ${addDays('2025-01-01', k * 40)}, 'import')`;
+        for (let k = 0; k < p.cars; k++) cars.push((await sql`insert into arts.vehicles (customer_id, year, make, model) values (${c.id}, ${2010 + k}, ${p.shout ? 'FORD' : 'Ford'}, ${p.shout ? 'ESCAPE' : 'Escape'}) returning id`)[0].id);
+        const bookings: string[] = [];
         for (let k = 0; k < p.bookings; k++) {
-          await sql`select arts.create_booking(${sql.json({ customer_id: c.id, vehicle_id: cars[0] ?? null, date: addDays(new Date().toISOString().slice(0, 10), 20 + k), kind: 'dropoff', service_ids: [oil], created_by_type: 'admin', override: true, actor } as any)})`;
+          const [{ r }] = await sql`select arts.create_booking(${sql.json({ customer_id: c.id, vehicle_id: cars[0] ?? null, date: addDays(new Date().toISOString().slice(0, 10), 20 + k), kind: 'dropoff', service_ids: [oil], created_by_type: 'admin', override: true, actor } as any)}) as r`;
+          bookings.push(r.booking_id);
         }
-        if (p.reminders) await sql`insert into arts.reminder_sends (customer_id, service_id, due_date, step, channel, status) values (${c.id}, ${oil}, ${addDays('2026-06-01', i)}, 1, 'email', 'sent')`;
+        // Finished bookings make their own visit records; imported visits land on the same dates.
+        if (p.visitsFromBookings) for (const id of bookings) await sql`select arts.set_booking_status(${id}, 'completed', ${sql.json(actor)})`;
+        for (let k = 0; k < p.visits; k++) {
+          await sql`insert into arts.service_history (customer_id, vehicle_id, service_id, service_date, source)
+            values (${c.id}, ${cars[k % (cars.length || 1)] ?? null}, ${oil}, ${addDays(new Date().toISOString().slice(0, 10), 20 + k)}, 'import')`;
+        }
+        for (let k = 0; k < p.reminders; k++) {
+          await sql`insert into arts.reminder_sends (customer_id, vehicle_id, service_id, due_date, step, channel, status) values (${c.id}, ${cars[0] ?? null}, ${oil}, '2026-06-01', ${k + 1}, 'email', 'sent')`;
+        }
         return c.id as string;
       };
       const keep = await make(a, 'K');
       const gone = await make(b, 'M');
       const snap = async () => ({
         customers: await sql`select * from arts.customers where id in (${keep}, ${gone}) order by id`,
-        owners: await sql`
-          select 'vehicle' as t, id, customer_id from arts.vehicles where customer_id in (${keep}, ${gone})
-          union all select 'booking', id, customer_id from arts.bookings where customer_id in (${keep}, ${gone})
-          union all select 'history', id, customer_id from arts.service_history where customer_id in (${keep}, ${gone})
-          union all select 'reminder', id, customer_id from arts.reminder_sends where customer_id in (${keep}, ${gone})
-          order by 1, 2`,
+        vehicles: await sql`select * from arts.vehicles where customer_id in (${keep}, ${gone}) order by id`,
+        bookings: await sql`select id, customer_id, vehicle_id from arts.bookings where customer_id in (${keep}, ${gone}) order by id`,
+        history: await sql`select * from arts.service_history where customer_id in (${keep}, ${gone}) order by id`,
+        reminders: await sql`select * from arts.reminder_sends where customer_id in (${keep}, ${gone}) order by id`,
       });
       const before = await snap();
       const [{ r }] = await sql`select arts.merge_customers(${keep}, ${gone}, ${sql.json(actor)}) as r`;
@@ -262,6 +273,9 @@ describe('customer merge', () => {
       const [{ left }] = await sql`select (select count(*) from arts.vehicles where customer_id = ${gone}) + (select count(*) from arts.bookings where customer_id = ${gone})
         + (select count(*) from arts.service_history where customer_id = ${gone}) + (select count(*) from arts.reminder_sends where customer_id = ${gone}) as left`;
       expect(Number(left)).toBe(0);
+      // One copy of each car, and of each visit.
+      const [{ dupCars }] = await sql`select count(*)::int as "dupCars" from (select 1 from arts.vehicles where customer_id = ${keep} group by year, arts.norm_make(make), arts.norm_text(model) having count(*) > 1) x`;
+      expect(dupCars).toBe(0);
       expect(await checkRecords()).toEqual([]);
       await sql`select arts.unmerge_customers(${r.merge_id}, ${sql.json(actor)})`;
       expect(await snap()).toEqual(before);

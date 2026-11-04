@@ -9,7 +9,7 @@ import type { JobSummary } from './jobs.js';
 import { alertOwner } from './jobs.js';
 import * as V from './validate.js';
 import { sendEmail } from './email/send.js';
-import { emailProvider } from './email/provider.js';
+import { emailProvider, type EmailMessage, type EmailProvider, type SendResult } from './email/provider.js';
 import { withRetry } from './retry.js';
 import * as T from './email/templates.js';
 import { oneClickUnsubscribeUrl, personalBookingUrl, unsubscribeUrl } from './tokens.js';
@@ -148,6 +148,23 @@ export async function planServiceReminders(s: ShopSettings, on: string): Promise
   return plan;
 }
 
+// Reminders handled per group (see runServiceReminders). 50 keeps a group
+// well inside one run and within the provider's 100-per-call batch limit.
+const SEND_GROUP = 50;
+
+// Sends a group of emails: one batch call where the provider supports it,
+// otherwise one at a time. Each result lines up with its message.
+async function sendMany(provider: EmailProvider, msgs: EmailMessage[]): Promise<{ value?: SendResult; error?: Error }[]> {
+  const pause = process.env.VITEST ? 1 : 500;
+  if (provider.sendBatch) {
+    const r = await withRetry(() => provider.sendBatch!(msgs), 3, pause);
+    return msgs.map((_, i) => (r.error ? { error: r.error } : { value: r.value![i] }));
+  }
+  const out: { value?: SendResult; error?: Error }[] = [];
+  for (const m of msgs) out.push(await withRetry(() => provider.send(m), 3, pause));
+  return out;
+}
+
 async function draftBatch(on: string): Promise<string> {
   const week = mondayOf(on);
   const { data: existing } = await db().from('mail_batches').select('id').eq('status', 'draft').eq('week_of', week).maybeSingle();
@@ -202,82 +219,99 @@ export async function runServiceReminders(s: ShopSettings, on: string, deadline 
   const cust = new Map(custs.map((c) => [c.id, c]));
   const svcName = new Map((svcs ?? []).map((x) => [x.id, x.name as string]));
   const veh = new Map(vehicles.map((v) => [v.id, vehicleText(v)]));
+  // One postcard batch per run, created on first need (groups run in parallel).
+  let batchP: Promise<string> | null = null;
   let batchId: string | null = null;
 
-  for (const p of plan) {
+  // Work through the plan a group at a time: each group's database work runs
+  // side by side and its emails go to the provider in one call, so a busy
+  // day (or the first run after an import) fits in far fewer runs.
+  for (let g = 0; g < plan.length; g += SEND_GROUP) {
     // Stop cleanly before the platform's time limit; the hourly job finishes the rest.
     if (Date.now() > deadline) {
       out.more = true;
       break;
     }
-    const c = cust.get(p.item.customer_id)!;
-    const base = {
-      customer_id: c.id, vehicle_id: p.item.vehicle_id, service_id: p.item.service_id, due_date: p.item.due_date,
-      rule_id: p.rule.id, step: p.rule.step, channel: p.rule.channel,
-    };
-    const record = async (status: string, extra: Record<string, unknown> = {}) => {
-      // The unique index makes each step fire at most once per due cycle.
-      let q = db().from('reminder_sends').select('id').eq('customer_id', c.id).eq('service_id', p.item.service_id).eq('due_date', p.item.due_date).eq('step', p.rule.step);
-      q = p.item.vehicle_id ? q.eq('vehicle_id', p.item.vehicle_id) : q.is('vehicle_id', null);
-      const existing = (await q.maybeSingle()).data;
-      if (existing) await db().from('reminder_sends').update({ status, ...extra }).eq('id', existing.id);
-      else await db().from('reminder_sends').insert({ ...base, status, created_at: new Date().toISOString(), ...extra });
-    };
+    const emails: { claimId: string; msg: EmailMessage }[] = [];
+    await Promise.all(plan.slice(g, g + SEND_GROUP).map(async (p) => {
+      const c = cust.get(p.item.customer_id)!;
+      const base = {
+        customer_id: c.id, vehicle_id: p.item.vehicle_id, service_id: p.item.service_id, due_date: p.item.due_date,
+        rule_id: p.rule.id, step: p.rule.step, channel: p.rule.channel,
+      };
+      const record = async (status: string, extra: Record<string, unknown> = {}) => {
+        // The unique index makes each step fire at most once per due cycle.
+        let q = db().from('reminder_sends').select('id').eq('customer_id', c.id).eq('service_id', p.item.service_id).eq('due_date', p.item.due_date).eq('step', p.rule.step);
+        q = p.item.vehicle_id ? q.eq('vehicle_id', p.item.vehicle_id) : q.is('vehicle_id', null);
+        const existing = (await q.maybeSingle()).data;
+        if (existing) await db().from('reminder_sends').update({ status, ...extra }).eq('id', existing.id);
+        else await db().from('reminder_sends').insert({ ...base, status, created_at: new Date().toISOString(), ...extra });
+      };
 
-    if (p.action === 'skip') {
-      await record('skipped', { error: p.reason });
-      out.skipped++;
-      continue;
-    }
+      if (p.action === 'skip') {
+        await record('skipped', { error: p.reason });
+        out.skipped++;
+        return;
+      }
 
-    // Opt-outs, bounces and bad addresses are never contacted.
-    const blocked = p.rule.channel === 'email'
-      ? (!c.email && 'no email') || (c.email_opt_out && 'opted out of email') || (c.email_bounced && 'email bounced')
-      : (!hasAddress(c) && 'no mailing address') || (c.mail_opt_out && 'opted out of mail') || (c.address_undeliverable && 'address undeliverable');
-    if (blocked) {
-      await record('skipped', { error: blocked });
-      out.skipped++;
-      continue;
-    }
+      // Opt-outs, bounces and bad addresses are never contacted.
+      const blocked = p.rule.channel === 'email'
+        ? (!c.email && 'no email') || (c.email_opt_out && 'opted out of email') || (c.email_bounced && 'email bounced')
+        : (!hasAddress(c) && 'no mailing address') || (c.mail_opt_out && 'opted out of mail') || (c.address_undeliverable && 'address undeliverable');
+      if (blocked) {
+        await record('skipped', { error: blocked });
+        out.skipped++;
+        return;
+      }
 
-    if (s.reminders_dry_run) {
-      await record('dry_run');
-      out.dry_run++;
-      continue;
-    }
+      if (s.reminders_dry_run) {
+        await record('dry_run');
+        out.dry_run++;
+        return;
+      }
 
-    if (p.rule.channel === 'email') {
-      const r = T.serviceDueEmail(s, {
-        name: c.name.split(' ')[0] || c.name,
-        service: svcName.get(p.item.service_id) ?? 'service',
-        vehicle: (p.item.vehicle_id && veh.get(p.item.vehicle_id)) || '',
-        dueDate: p.item.due_date,
-        overdue: p.item.due_date < on,
-        // Personal link: opens booking with their details and cars filled in.
-        bookUrl: personalBookingUrl(s.booking_url, c.id, `email-step${p.rule.step}`),
-        unsubscribeUrl: unsubscribeUrl(c.id),
-      });
-      const claim = await claimStep(base);
-      if (!claim) continue; // another run is sending this one
-      const provider = emailProvider();
-      const res = await withRetry(() => provider.send({
-        kind: `service_due_step${p.rule.step}`,
-        to: c.email!, from: `${s.from_name} <${s.from_email}>`, replyTo: s.from_email, ...r,
-        // One-click unsubscribe (RFC 8058): mail apps POST to this API URL.
-        headers: { 'List-Unsubscribe': `<${oneClickUnsubscribeUrl(c.id)}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
-        idempotencyKey: `reminder:${claim.id}:${claim.attempt}`,
-      }), 3, process.env.VITEST ? 1 : 500);
-      const done = res.error
-        ? { status: 'failed', error: res.error.message.slice(0, 500) }
-        : { status: 'sent', provider_id: res.value!.id, cost_cents: res.value!.costCents, sent_at: new Date().toISOString() };
-      await db().from('reminder_sends').update(done).eq('id', claim.id);
-      if (res.error) out.failed++;
+      if (p.rule.channel === 'email') {
+        const r = T.serviceDueEmail(s, {
+          name: c.name.split(' ')[0] || c.name,
+          service: svcName.get(p.item.service_id) ?? 'service',
+          vehicle: (p.item.vehicle_id && veh.get(p.item.vehicle_id)) || '',
+          dueDate: p.item.due_date,
+          overdue: p.item.due_date < on,
+          // Personal link: opens booking with their details and cars filled in.
+          bookUrl: personalBookingUrl(s.booking_url, c.id, `email-step${p.rule.step}`),
+          unsubscribeUrl: unsubscribeUrl(c.id),
+        });
+        const claim = await claimStep(base);
+        if (!claim) return; // another run is sending this one
+        emails.push({
+          claimId: claim.id,
+          msg: {
+            kind: `service_due_step${p.rule.step}`,
+            to: c.email!, from: `${s.from_name} <${s.from_email}>`, replyTo: s.from_email, ...r,
+            // One-click unsubscribe (RFC 8058): mail apps POST to this API URL.
+            headers: { 'List-Unsubscribe': `<${oneClickUnsubscribeUrl(c.id)}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
+            idempotencyKey: `reminder:${claim.id}:${claim.attempt}`,
+          },
+        });
+      } else {
+        batchP ??= draftBatch(on);
+        batchId = await batchP;
+        await record('batched', { batch_id: batchId });
+        out.batched++;
+      }
+    }));
+
+    if (!emails.length) continue;
+    const results = await sendMany(emailProvider(), emails.map((e) => e.msg));
+    const sentAt = new Date().toISOString();
+    await Promise.all(emails.map(({ claimId }, i) => {
+      const r = results[i];
+      if (r.error) out.failed++;
       else out.emailed++;
-    } else {
-      batchId ??= await draftBatch(on);
-      await record('batched', { batch_id: batchId });
-      out.batched++;
-    }
+      return db().from('reminder_sends').update(r.error
+        ? { status: 'failed', error: r.error.message.slice(0, 500) }
+        : { status: 'sent', provider_id: r.value!.id, cost_cents: r.value!.costCents, sent_at: sentAt }).eq('id', claimId);
+    }));
   }
   if (batchId) await refreshBatch(s, batchId);
   return out;

@@ -54,8 +54,12 @@ describe('Epicor import commit', () => {
     await sql`insert into arts.customers (name, phone, source) values ('Pat Doe', '+16105550111', 'booking')`;
     const r = await run(`${HEADER}\n2002,Sam Smith,,6105550111,2 Oak St,Easton,PA,18042,2010,Ford,F-150,03/01/2026,LOF,,,\n`);
     expect(r.created).toBe(1);
+    // Same last name on that phone but a different first name: a spouse, not the same person.
     const r2 = await run(`${HEADER}\n2003,Chris Doe,,6105550111,1 Main St,Easton,PA,18042,2012,Ford,Focus,03/01/2026,LOF,,,\n`);
-    expect(r2.updated).toBe(1); // same last name on that phone: treated as the same customer
+    expect(r2.created).toBe(1);
+    // Same first name (or a nickname of it) on that phone: the same customer.
+    const r3 = await run(`${HEADER}\n2004,Patricia Doe,,6105550111,1 Main St,Easton,PA,18042,2015,Honda,Fit,03/01/2026,LOF,,,\n`);
+    expect(r3.updated).toBe(1);
   });
 
   it('two-digit years mean 19xx when they are in the future', async () => {
@@ -78,7 +82,7 @@ describe('Epicor import commit', () => {
     const call = (action: string, body: unknown) => adminAction(reqWith(dev), action, body);
     const { pairs } = (await call('matches', {})).body as any;
     expect(pairs).toHaveLength(1);
-    expect(pairs[0]).toMatchObject({ app_id: app.id, reasons: ['same car'], tracs: { epicor_id: '3001' } });
+    expect(pairs[0]).toMatchObject({ app_id: app.id, reasons: ['same car', 'similar first name'], tracs: { epicor_id: '3001' } });
     // Merge keeps the TRACS record.
     await call('merge', { keep_id: pairs[0].tracs_id, merge_id: app.id });
     expect(((await call('matches', {})).body as any).pairs).toEqual([]);
@@ -86,13 +90,29 @@ describe('Epicor import commit', () => {
     expect(kept.epicor_id).toBe('3001');
   });
 
-  it('“Not the same” hides a pair for good', async () => {
+  it('the same name alone is not suggested as a match', async () => {
     await sql`insert into arts.customers (name, email, source) values ('Sam Lee', 'sam@example.com', 'booking')`;
+    await run(`${HEADER}\n3002,Sam Lee,,6105558888,9 Elm St,Easton,PA,18042,2010,Ford,F-150,03/01/2026,LOF,,,\n`);
+    const dev = (await adminToken('developer')).token;
+    expect(((await adminAction(reqWith(dev), 'matches', {})).body as any).pairs).toEqual([]);
+  });
+
+  it('cars match across spellings, and a visit already booked online isn’t imported twice', async () => {
+    const [app] = await sql`insert into arts.customers (name, email, source) values ('Jo Park', 'jo@example.com', 'booking') returning id`;
+    const [v] = await sql`insert into arts.vehicles (customer_id, year, make, model) values (${app.id}, 2019, 'Chevy', 'Silverado1500') returning id`;
+    await sql`insert into arts.service_history (customer_id, vehicle_id, service_id, service_date, source) values (${app.id}, ${v.id}, (select id from arts.services where name = 'Oil change'), '2026-03-01', 'booking')`;
+    // Same email: linked by the import. TRACS spells the car out in full.
+    await run(`${HEADER}\n3003,JO PARK,jo@example.com,,,,,,2019,CHEVROLET,SILVERADO 1500,03/01/2026,LOF,,,\n`);
+    expect(await counts()).toEqual({ c: 1, v: 1, h: 1 });
+  });
+
+  it('“Not the same” hides a pair for good', async () => {
+    await sql`insert into arts.customers (name, email, address_line1, source) values ('Sam Lee', 'sam@example.com', '9 ELM ST', 'booking')`;
     await run(`${HEADER}\n3002,Sam Lee,,6105558888,9 Elm St,Easton,PA,18042,2010,Ford,F-150,03/01/2026,LOF,,,\n`);
     const dev = (await adminToken('developer')).token;
     const call = (action: string, body: unknown) => adminAction(reqWith(dev), action, body);
     const [p] = ((await call('matches', {})).body as any).pairs;
-    expect(p.reasons).toEqual(['same name']);
+    expect(p.reasons).toEqual(['same street', 'same name']);
     await call('match-dismiss', { app_id: p.app_id, tracs_id: p.tracs_id });
     expect(((await call('matches', {})).body as any).pairs).toEqual([]);
   });

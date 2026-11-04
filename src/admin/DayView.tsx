@@ -291,27 +291,57 @@ function mergedMinutes(spans: number[][]) {
   return total;
 }
 
+export interface Affected { id: string; date: string; kind: string; start_time: string | null; customer: string }
+
+// Bookings already inside a closure or block being saved. Saving doesn't
+// cancel or move them and nobody is told, so staff see them and decide.
+export function AffectedBookings({ list, what, onConfirm, onCancel }: { list: Affected[]; what: string; onConfirm: () => void; onCancel: () => void }) {
+  const one = list.length === 1;
+  return (
+    <div className="banner" role="alert">
+      <p><strong>{one ? '1 booking is' : `${list.length} bookings are`} already in this {what}.</strong> Saving won’t cancel or move {one ? 'it' : 'them'}, and {one ? 'the customer isn’t' : 'the customers aren’t'} told. Move or call {one ? 'them' : 'each one'} from the day view.</p>
+      <ul>
+        {list.map((b) => (
+          <li key={b.id}>{formatDate(b.date, { weekday: 'short', month: 'short', day: 'numeric' })} · {b.start_time ? formatTime(b.start_time) : 'any time'} {b.kind === 'wait' ? 'wait' : 'drop-off'} · {b.customer}</li>
+        ))}
+      </ul>
+      <div className="row">
+        <button type="button" className="btn primary small" onClick={onConfirm}>Save anyway</button>
+        <button type="button" className="btn small" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 // Block part of a day from online booking, once or every week.
 export function BlockForm({ date, onDone }: { date: string; onDone: () => void }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  async function save(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const f = new FormData(e.currentTarget);
-    const d = String(f.get('date'));
+  const [pending, setPending] = useState<{ body: Record<string, unknown>; list: Affected[] } | null>(null);
+  async function send(body: Record<string, unknown>) {
     setBusy(true);
     setErr('');
     try {
-      await adminPost('block', {
-        ...(f.get('weekly') === 'on' ? { weekday: isoDow(d) } : { date: d }),
-        start_time: f.get('start_time'), end_time: f.get('end_time'), reason: f.get('reason'),
-      });
-      onDone();
+      const r = await adminPost('block', body);
+      if (r?.error === 'bookings_affected') setPending({ body, list: r.bookings });
+      else {
+        setPending(null);
+        onDone();
+      }
     } catch (x) {
       setErr(String((x as Error).message));
     } finally {
       setBusy(false);
     }
+  }
+  async function save(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const d = String(f.get('date'));
+    await send({
+      ...(f.get('weekly') === 'on' ? { weekday: isoDow(d) } : { date: d }),
+      start_time: f.get('start_time'), end_time: f.get('end_time'), reason: f.get('reason'),
+    });
   }
   return (
     <form className="block-form" onSubmit={save}>
@@ -324,7 +354,9 @@ export function BlockForm({ date, onDone }: { date: string; onDone: () => void }
       <label className="check-row"><input type="checkbox" name="weekly" /> Repeat every week on this weekday</label>
       <p className="help">Customers can’t book online during this time, and it comes off the day’s capacity. Bookings already in that time stay; you can still book over it by phone.</p>
       {err && <p className="error">{err}</p>}
-      <button className="btn primary" disabled={busy}>{busy ? 'Saving…' : 'Block time'}</button>
+      {pending
+        ? <AffectedBookings list={pending.list} what="time" onConfirm={() => send({ ...pending.body, confirm: true })} onCancel={() => setPending(null)} />
+        : <button className="btn primary" disabled={busy}>{busy ? 'Saving…' : 'Block time'}</button>}
     </form>
   );
 }

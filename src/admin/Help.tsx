@@ -25,6 +25,7 @@ const TASKS: Topic[] = [
       <ol>
         <li>On <b>Day</b>, go to the date and click <b>Block time</b>.</li>
         <li>Pick the start and end, add a reason (only staff see it), and tick <b>Repeat every week</b> for a standing block.</li>
+        <li>If bookings are already in that time, you’ll see them before anything is saved. Saving anyway doesn’t cancel or move them, and the customers aren’t told, so call or move them from the day view. The same goes for adding a closure in Settings.</li>
         <li>Customers can’t book online in that time. Existing bookings stay; you can still book over it by phone.</li>
       </ol>
     ),

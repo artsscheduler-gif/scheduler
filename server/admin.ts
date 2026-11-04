@@ -404,15 +404,40 @@ async function setLevel(a: Admin, body: unknown): Promise<Result> {
 }
 
 export function checkClosure(body: unknown) {
-  const b = V.obj(body, ['id', 'start_date', 'end_date', 'reason', 'delete']);
+  const b = V.obj(body, ['id', 'start_date', 'end_date', 'reason', 'delete', 'confirm']);
   const start = V.date(b.start_date, 'start_date');
   const end = b.end_date ? V.date(b.end_date, 'end_date') : start;
   if (end < start) throw new V.ValidationError('end_date', 'must be on or after start');
   return { start_date: start, end_date: end, reason: V.str(b.reason, 'reason', { max: 100, optional: true }) };
 }
 
+// Bookings already in a new closure or blocked time. They aren't cancelled
+// or told, so staff are shown them first and must confirm.
+async function bookingsIn(span: { start_date?: string; end_date?: string; date?: string | null; weekday?: number | null; start_time?: string; end_time?: string }) {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: (await getSettings()).timezone }).format(new Date());
+  let q = db().from('bookings').select('id, date, kind, start_time, total_minutes, customers(name)').in('status', ['requested', 'confirmed']).gte('date', today).order('date').order('start_time');
+  if (span.start_date) q = q.gte('date', span.start_date).lte('date', span.end_date ?? span.start_date);
+  else if (span.date) q = q.eq('date', span.date);
+  const { data } = await q;
+  const min = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+  return (data ?? []).filter((b: any) => {
+    if (span.start_date) return true;
+    if (span.weekday && ((new Date(`${b.date}T12:00:00Z`).getUTCDay() + 6) % 7) + 1 !== span.weekday) return false;
+    // Untimed drop-offs aren't in the way of a block.
+    if (!b.start_time) return false;
+    const st = min(b.start_time);
+    const [bs, be] = [min(span.start_time!), min(span.end_time!)];
+    return b.kind === 'wait' ? st < be && st + b.total_minutes > bs : st >= bs && st < be;
+  }).map((b: any) => ({ id: b.id, date: b.date, kind: b.kind, start_time: b.start_time?.slice(0, 5) ?? null, customer: b.customers?.name ?? '' }));
+}
+
+function affected(list: Awaited<ReturnType<typeof bookingsIn>>, confirmed: unknown): Result | null {
+  if (!list.length || confirmed === true) return null;
+  return { status: 409, body: { error: 'bookings_affected', bookings: list } };
+}
+
 export async function closure(a: Admin, body: unknown): Promise<Result> {
-  const b = V.obj(body, ['id', 'start_date', 'end_date', 'reason', 'delete']);
+  const b = V.obj(body, ['id', 'start_date', 'end_date', 'reason', 'delete', 'confirm']);
   if (b.delete) {
     const id = V.uuid(b.id, 'id');
     const { data: before } = await db().from('closures').select('*').eq('id', id).single();
@@ -421,6 +446,8 @@ export async function closure(a: Admin, body: unknown): Promise<Result> {
     return { status: 200, body: { ok: true } };
   }
   const row = checkClosure(body);
+  const warn = affected(await bookingsIn(row), b.confirm);
+  if (warn) return warn;
   if (b.id) {
     const id = V.uuid(b.id, 'id');
     const { data: before } = await db().from('closures').select('*').eq('id', id).single();
@@ -451,7 +478,7 @@ async function auditItem(a: Admin, body: unknown): Promise<Result> {
 }
 
 export function checkBlock(body: unknown) {
-  const b = V.obj(body, ['id', 'date', 'weekday', 'start_time', 'end_time', 'reason', 'delete']);
+  const b = V.obj(body, ['id', 'date', 'weekday', 'start_time', 'end_time', 'reason', 'delete', 'confirm']);
   const weekly = b.weekday !== undefined && b.weekday !== null && b.weekday !== '';
   const row = {
     date: weekly ? null : V.date(b.date, 'date'),
@@ -466,7 +493,7 @@ export function checkBlock(body: unknown) {
 
 // Part-day blocks: one date, or every week on a weekday (1 = Monday).
 export async function timeBlock(a: Admin, body: unknown): Promise<Result> {
-  const b = V.obj(body, ['id', 'date', 'weekday', 'start_time', 'end_time', 'reason', 'delete']);
+  const b = V.obj(body, ['id', 'date', 'weekday', 'start_time', 'end_time', 'reason', 'delete', 'confirm']);
   if (b.delete) {
     const id = V.uuid(b.id, 'id');
     const { data: before } = await db().from('time_blocks').select('*').eq('id', id).single();
@@ -475,6 +502,8 @@ export async function timeBlock(a: Admin, body: unknown): Promise<Result> {
     return { status: 200, body: { ok: true } };
   }
   const row = checkBlock(body);
+  const warn = affected(await bookingsIn(row), b.confirm);
+  if (warn) return warn;
   if (b.id) {
     const id = V.uuid(b.id, 'id');
     const { data: before } = await db().from('time_blocks').select('*').eq('id', id).single();

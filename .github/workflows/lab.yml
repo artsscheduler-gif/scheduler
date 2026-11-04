@@ -1,0 +1,41 @@
+name: Test lab
+# Every night: six simulated weeks at the shop and the randomized rule checks,
+# with a new random seed each time, so it keeps finding new situations. A
+# failure emails the repo owner; the report says how to replay it
+# (LAB_SEED=<seed> npm run lab). Run it by hand from the Actions tab too.
+on:
+  schedule:
+    - cron: '0 8 * * *' # 3–4am in Allentown
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: Replay a seed (blank = random)
+        required: false
+
+jobs:
+  lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - run: npm ci
+      - run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,realtime,supavisor
+      - run: node scripts/write-local-env.mjs
+      - run: npm run lab
+        env:
+          LAB_SEED: ${{ inputs.seed }}
+          LAB_RUNS: 100
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab-report
+          path: tests/lab/out/
+          retention-days: 30

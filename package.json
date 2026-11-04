@@ -14,6 +14,7 @@
     "test:unit": "vitest run tests/unit",
     "test:db": "vitest run tests/db",
     "lab": "vitest run --config vitest.lab.config.ts",
+    "stress": "tsx scripts/stress.ts",
     "db:start": "supabase start",
     "db:reset": "supabase db reset",
     "import:epicor": "tsx scripts/import-epicor.ts",

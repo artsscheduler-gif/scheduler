@@ -4,7 +4,7 @@ import { adminPost } from './api';
 import { must, useQuery, useRole, useServices, useSettings, type ServiceRow, type Settings as S } from './shared';
 import { TECH_SETTINGS } from '../../shared/permissions';
 import { DOW_KEYS, formatDate } from '../../shared/time';
-import { BlockForm, blockLabel, type Block } from './DayView';
+import { AffectedBookings, BlockForm, blockLabel, type Affected, type Block } from './DayView';
 
 type Kind = 'text' | 'int' | 'bool' | 'time' | 'email' | 'color';
 interface F { k: string; label: string; t: Kind; help?: string }
@@ -231,12 +231,18 @@ function ServiceEditor({ row, onSaved }: { row: Partial<ServiceRow>; onSaved: ()
 
 function Closures() {
   const list = useQuery(() => must(supabase.from('closures').select('*').gte('end_date', new Date().toISOString().slice(0, 10)).order('start_date')) as Promise<any[]>);
+  const [pending, setPending] = useState<{ body: Record<string, unknown>; list: Affected[]; form: HTMLFormElement } | null>(null);
+  async function send(body: Record<string, unknown>, form: HTMLFormElement) {
+    const r = await adminPost('closure', body);
+    if (r?.error === 'bookings_affected') return setPending({ body, list: r.bookings, form });
+    setPending(null);
+    form.reset();
+    list.reload();
+  }
   async function add(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
-    await adminPost('closure', { start_date: f.get('start_date'), end_date: f.get('end_date') || undefined, reason: f.get('reason') });
-    e.currentTarget.reset();
-    list.reload();
+    await send({ start_date: f.get('start_date'), end_date: f.get('end_date') || undefined, reason: f.get('reason') }, e.currentTarget);
   }
   return (
     <div className="settings-section">
@@ -258,7 +264,8 @@ function Closures() {
         <input name="reason" placeholder="Reason (e.g. Thanksgiving)" maxLength={100} aria-label="Reason" />
         <button className="btn small">Add closure</button>
       </form>
-      <p className="help">Existing bookings on a new closure date are not cancelled automatically. Check the day view.</p>
+      {pending && <AffectedBookings list={pending.list} what="closure" onConfirm={() => send({ ...pending.body, confirm: true }, pending.form)} onCancel={() => setPending(null)} />}
+      <p className="help">Existing bookings on a new closure date are not cancelled automatically. You’ll see them before it’s saved.</p>
     </div>
   );
 }

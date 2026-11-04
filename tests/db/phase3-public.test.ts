@@ -76,7 +76,7 @@ describe('Public booking', () => {
   it('response is identical whether or not the email matches an existing customer', async () => {
     await sql`update arts.services set approval_level = 'notify'`;
     await sql`update arts.shop_settings set notes_require_review = false`;
-    const [c] = await sql`insert into arts.customers (name, email, source) values ('Known', 'known@example.com', 'import') returning id`;
+    const [c] = await sql`insert into arts.customers (name, email, source) values ('Pat Known', 'known@example.com', 'import') returning id`;
     await sql`insert into arts.service_history (customer_id, service_date, source) values (${c.id}, '2025-03-01', 'import')`;
     const known = await postBook(body({ email: 'known@example.com', start_time: '09:00' }), '10.0.0.3');
     const fresh = await postBook(body({ start_time: '09:00' }), '10.0.0.4');

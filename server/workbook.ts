@@ -90,10 +90,11 @@ export async function workbookApply(a: Admin, body: unknown): Promise<Result> {
         if (id && !cur) throw new Error('id not found (don’t edit the id column)');
         if (id) seen.add(id);
         const label = describe(sheet, row);
-        if (!cur) changes.push({ sheet, action: 'add', label, detail: '', run: () => save(a, row) });
+        // The upload preview is the confirmation for bookings already there.
+        if (!cur) changes.push({ sheet, action: 'add', label, detail: '', run: () => save(a, { ...row, confirm: true }) });
         else {
           const d = diffText(cur, row, {});
-          if (d) changes.push({ sheet, action: 'update', label, detail: d, run: () => save(a, { ...row, id }) });
+          if (d) changes.push({ sheet, action: 'update', label, detail: d, run: () => save(a, { ...row, id, confirm: true }) });
         }
       } catch (e) {
         problem(problems, sheet, r._row, e);

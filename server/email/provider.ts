@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { env } from '../env.js';
 import { db } from '../db.js';
 
@@ -20,6 +21,8 @@ export interface SendResult { id: string; costCents: number }
 export interface EmailProvider {
   name: string;
   send(msg: EmailMessage): Promise<SendResult>;
+  // Several emails in one call (no attachments). Results in message order.
+  sendBatch?(msgs: EmailMessage[]): Promise<SendResult[]>;
   ping(): Promise<boolean>;
 }
 
@@ -50,6 +53,25 @@ export class ResendProvider implements EmailProvider {
     if (!res.ok || !data.id) throw new Error(`Resend ${res.status}: ${data.message ?? 'send failed'}`);
     // Resend bills by plan tier, not per message; record 0 and track plan cost separately.
     return { id: data.id, costCents: 0 };
+  }
+
+  // https://resend.com/docs/api-reference/emails/send-batch-emails: up to 100
+  // per call, all or nothing. The batch's key is built from each message's
+  // key, so retrying the same group can't send it twice.
+  async sendBatch(msgs: EmailMessage[]): Promise<SendResult[]> {
+    if (msgs.length > 100 || msgs.some((m) => m.attachments?.length)) throw new Error('batch: at most 100 emails, no attachments');
+    const keys = msgs.map((m) => m.idempotencyKey ?? '');
+    const key = keys.every(Boolean) ? `batch:${createHash('sha256').update(keys.join('|')).digest('hex')}` : null;
+    const res = await fetch('https://api.resend.com/emails/batch', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.key}`, 'Content-Type': 'application/json', ...(key ? { 'Idempotency-Key': key } : {}) },
+      body: JSON.stringify(msgs.map((m) => ({
+        from: m.from, to: [m.to], subject: m.subject, html: m.html, text: m.text, reply_to: m.replyTo, headers: m.headers,
+      }))),
+    });
+    const data = (await res.json().catch(() => ({}))) as { data?: { id: string }[]; message?: string };
+    if (!res.ok || data.data?.length !== msgs.length) throw new Error(`Resend batch ${res.status}: ${data.message ?? 'send failed'}`);
+    return data.data.map((d) => ({ id: d.id, costCents: 0 }));
   }
 
   async ping(): Promise<boolean> {
