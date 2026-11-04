@@ -172,7 +172,9 @@ async function claimStep(base: Record<string, unknown> & { customer_id: string; 
   q = base.vehicle_id ? q.eq('vehicle_id', base.vehicle_id) : q.is('vehicle_id', null);
   const row = (await q.maybeSingle()).data as { id: string; status: string; attempts: number; claimed_at: string | null } | null;
   if (!row) {
-    const { data, error } = await db().from('reminder_sends').insert({ ...base, status: 'queued', claimed_at: now, attempts: 1 }).select('id').single();
+    // created_at from the job's clock, not the database's: the next step's
+    // "no booking since" check counts from this date.
+    const { data, error } = await db().from('reminder_sends').insert({ ...base, status: 'queued', claimed_at: now, attempts: 1, created_at: now }).select('id').single();
     if (error) return null; // unique index: another run claimed it first
     return { id: data.id as string, attempt: 1 };
   }
@@ -219,7 +221,7 @@ export async function runServiceReminders(s: ShopSettings, on: string, deadline 
       q = p.item.vehicle_id ? q.eq('vehicle_id', p.item.vehicle_id) : q.is('vehicle_id', null);
       const existing = (await q.maybeSingle()).data;
       if (existing) await db().from('reminder_sends').update({ status, ...extra }).eq('id', existing.id);
-      else await db().from('reminder_sends').insert({ ...base, status, ...extra });
+      else await db().from('reminder_sends').insert({ ...base, status, created_at: new Date().toISOString(), ...extra });
     };
 
     if (p.action === 'skip') {

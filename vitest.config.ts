@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, configDefaults } from 'vitest/config';
 import { readFileSync, existsSync } from 'node:fs';
 
 function loadEnv(path: string) {
@@ -15,5 +15,7 @@ export default defineConfig({
     testTimeout: 30000,
     hookTimeout: 30000,
     fileParallelism: false,
+    // The test lab runs on its own: npm run lab.
+    exclude: [...configDefaults.exclude, 'tests/lab/**'],
   },
 });
