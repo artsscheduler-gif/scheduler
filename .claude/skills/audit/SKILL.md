@@ -70,7 +70,7 @@ npx tsx scripts/audit-sync.ts apply audit/run-YYYY-MM-DD.json
 ```
 
 Then tell Jake: how many findings, what's new, what's verified fixed, and the top three to do
-next, with a link to https://arts.jvtestspace.com/admin/checklist.
+next, with a link to https://arts.jvtestspace.com/admin/settings/checklist.
 
 ## Keeping the checklist current between audits
 

@@ -117,11 +117,15 @@ const TABS: Topic[] = [
     ),
   },
   {
-    id: 'tab-activity', who: 'Developer', min: 'developer', title: 'Activity',
+    id: 'tab-settings-dev', who: 'Developer', min: 'developer', title: 'Settings tabs',
+    body: <p>Settings has more tabs for the developer: <b>Simulator</b> (test site only), <b>Test runs</b>, <b>Activity</b>, <b>Export</b>, <b>Team</b> and <b>Checklist</b>. The owner sees only the shop settings.</p>,
+  },
+  {
+    id: 'tab-activity', who: 'Developer', min: 'developer', title: 'Settings → Activity',
     body: <p>A record of everything that happened: <b>Changes</b> (who changed what, before and after), <b>Reminders</b> sent, <b>Emails</b> sent and whether they failed, and <b>Scheduled jobs</b> (the daily and hourly runs, with any errors). Type in the filter box to narrow any list; <b>Show older</b> loads more. Times are shop time.</p>,
   },
   {
-    id: 'tab-export', who: 'Developer', min: 'developer', title: 'Export',
+    id: 'tab-export', who: 'Developer', min: 'developer', title: 'Settings → Export',
     body: (
       <>
         <p><b>Download workbook</b> gives you everything as one Excel file. Blue tabs (Services, Hours, Closures, Blocked time, Reminder steps, Settings) can be edited; grey tabs (Customers, Vehicles, Service history, Bookings) are for reference and analysis.</p>
@@ -131,7 +135,7 @@ const TABS: Topic[] = [
     ),
   },
   {
-    id: 'tab-team', title: 'Team', who: 'Developer', min: 'developer',
+    id: 'tab-team', title: 'Settings → Team', who: 'Developer', min: 'developer',
     body: (
       <>
         <p>Who can sign in, and what they can do:</p>
@@ -145,23 +149,35 @@ const TABS: Topic[] = [
     ),
   },
   {
-    id: 'tab-checklist', title: 'Checklist', who: 'Developer', min: 'developer',
-    body: <p>The launch checklist from code audits. Tick items as they’re done; add notes or decisions under <b>Details</b>. To rerun the audit, type <b>/audit</b> in Claude Code in the project folder: new problems are added and fixed ones are flagged.</p>,
+    id: 'tab-checklist', title: 'Settings → Checklist', who: 'Developer', min: 'developer',
+    body: <p>The launch checklist from code audits. Tick items as they’re done; add notes or decisions under <b>Details</b>. To rerun the audit, type <b>/audit</b> in Claude Code in the project folder: new problems are added and fixed ones are flagged. A test run that breaks a rule adds an item under <b>Found by the test lab</b>.</p>,
+  },
+  {
+    id: 'tab-test-runs', title: 'Settings → Test runs', who: 'Developer', min: 'developer',
+    body: (
+      <>
+        <p>Results of the automated test lab. Every night (about 3am) it plays out six weeks at the shop on a throwaway copy of the system — customers booking, changing and cancelling, Chris answering, the reminder jobs, a monthly TRACS import and match review — and checks after every simulated day that no rule broke. It also runs randomized checks on booking, merging, reminders and the import. Real data is never touched.</p>
+        <ul>
+          <li><b>Result</b>: Passed, or Rule broken (also added to the Checklist and emailed to the GitHub account).</li>
+          <li><b>Findings</b>: not failures, but things worth a human look (for example, two people sharing a phone). The table at the bottom shows how each kind changes from run to run.</li>
+          <li><b>Run now</b> starts a run (results in about 3–5 minutes). <b>Replay this run</b> repeats a run exactly, to check a fix. On a laptop: <code>LAB_SEED=&lt;seed&gt; npm run lab</code>.</li>
+        </ul>
+        <p>Setup: nightly results need the GitHub repository secrets <code>STAGING_SUPABASE_URL</code> and <code>STAGING_SERVICE_ROLE_KEY</code>; <b>Run now</b> also needs <code>GITHUB_DISPATCH_TOKEN</code> in Vercel (a fine-grained GitHub token with Actions read and write on this repository).</p>
+      </>
+    ),
   },
 ];
 
 const STAGING_TABS: Topic[] = [
   {
-    id: 'tab-lab', title: 'Test lab', who: 'Developer, test site only', min: 'developer',
-    body: <p>Play the customer and the shop at once. <b>Open customer phone</b> opens the booking page in a phone-sized window. Every email appears in the feed on the left (marked To customer / To Chris / To owner); links in an email open in the phone. The shop’s Day view is on the right. <b>Run</b> under Reminders runs the daily jobs for a date, to see reminder emails. <b>Reset test site</b> clears every booking, customer and email for a clean start (services, hours, settings and logins stay).</p>,
-  },
-  {
-    id: 'tab-outbox', title: 'Outbox', who: 'Developer, test site only', min: 'developer',
-    body: <p>Every email the test site would have sent, exactly as the recipient would see it. Nothing is delivered, except a [TEST] copy to artsscheduler@gmail.com.</p>,
-  },
-  {
-    id: 'tab-simulator', title: 'Simulator', who: 'Developer, test site only', min: 'developer',
-    body: <p>Fills the test site with fake customers (@sim.invalid addresses) and booking requests, and fast-forwards days to see reminders and postcards. <b>Reset simulated data</b> removes everything fake.</p>,
+    id: 'tab-simulator', title: 'Settings → Simulator', who: 'Developer, test site only', min: 'developer',
+    body: (
+      <ul>
+        <li><b>Walk-through</b>: play the customer and the shop at once. <b>Open customer phone</b> opens the booking page in a phone-sized window. Every email appears in the feed on the left (marked To customer / To Chris / To owner); links in an email open in the phone. The shop’s Day view is on the right. <b>Run</b> under Reminders runs the daily jobs for a date, to see reminder emails. <b>Reset test site</b> clears every booking, customer and email for a clean start (services, hours, settings and logins stay).</li>
+        <li><b>Sample data</b>: fills the test site with fake customers (@sim.invalid addresses) and booking requests, and fast-forwards days to see reminders and postcards. <b>Reset simulated data</b> removes everything fake.</li>
+        <li><b>All emails</b>: every email the test site would have sent, exactly as the recipient would see it. Nothing is delivered, except a [TEST] copy to artsscheduler@gmail.com.</li>
+      </ul>
+    ),
   },
 ];
 

@@ -49,7 +49,9 @@ describe.skipIf(!staging)('Staging: simulator and outbox', () => {
     await page.getByRole('button', { name: 'Verify' }).click();
     await page.getByRole('heading', { name: /Waiting for you/ }).waitFor();
 
+    await page.getByRole('link', { name: 'Settings' }).click();
     await page.getByRole('link', { name: 'Simulator' }).click();
+    await page.getByRole('tab', { name: 'Sample data' }).click();
     await page.getByLabel('Customers').fill('60');
     await page.getByRole('button', { name: 'Add customers' }).click();
     await page.getByText(/Added 60 customers/).waitFor();
@@ -61,7 +63,7 @@ describe.skipIf(!staging)('Staging: simulator and outbox', () => {
     await page.getByText(/Ran 21 days/).waitFor({ timeout: 60000 });
     if (SHOTS) await page.screenshot({ path: `${SHOTS}/staging-1-simulator.png`, fullPage: true });
 
-    await page.getByRole('link', { name: 'Outbox' }).click();
+    await page.getByRole('tab', { name: 'All emails' }).click();
     await page.locator('.outbox-list button').first().waitFor();
     expect(await page.locator('.outbox-list button').count()).toBeGreaterThan(3);
     await page.getByLabel('Filter').fill('service_due');
@@ -89,7 +91,8 @@ describe.skipIf(!staging)('Staging: simulator and outbox', () => {
     await page.getByLabel('6-digit code').fill(new OTPAuth.TOTP({ secret: OTPAuth.Secret.fromBase32(secret) }).generate());
     await page.getByRole('button', { name: 'Verify' }).click();
     await page.getByRole('heading', { name: /Waiting for you/ }).waitFor();
-    await page.getByRole('link', { name: 'Test lab' }).click();
+    await page.getByRole('link', { name: 'Settings' }).click();
+    await page.getByRole('link', { name: 'Simulator' }).click();
 
     const [phone] = await Promise.all([page.waitForEvent('popup'), page.getByRole('button', { name: 'Open customer phone' }).click()]);
     await phone.route('https://vpic.nhtsa.dot.gov/**', (r) => r.fulfill({ json: { Results: [{ Model_Name: 'Civic' }] } }));
@@ -129,6 +132,7 @@ describe.skipIf(!staging)('Staging: simulator and outbox', () => {
 
     // Owner-only launch checklist: tick an item and it saves.
     await sql`insert into arts.audit_items (key, section, sort, title, priority, owner) values ('e2e-item', '9. E2E', 999, 'E2E checklist item', 'now', 'claude') on conflict (key) do update set done = false`;
+    await page.getByRole('link', { name: 'Settings' }).click();
     await page.getByRole('link', { name: 'Checklist' }).click();
     await page.getByRole('heading', { name: 'Launch checklist' }).waitFor();
     const saved = page.waitForResponse((r) => r.url().includes('/api/admin/audit-item') && r.request().method() === 'POST');
@@ -139,6 +143,7 @@ describe.skipIf(!staging)('Staging: simulator and outbox', () => {
     await sql`delete from arts.audit_items where key = 'e2e-item'`;
 
     // Owner-only Team page lists admins.
+    await page.getByRole('link', { name: 'Settings' }).click();
     await page.getByRole('link', { name: 'Team' }).click();
     await page.getByRole('heading', { name: 'Team' }).waitFor();
     await page.getByText('You', { exact: true }).waitFor();

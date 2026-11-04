@@ -23,4 +23,7 @@ export const env = {
   get mailProvider() { return process.env.MAIL_PROVIDER ?? 'stub'; },
   get lobKey() { return process.env.LOB_API_KEY ?? ''; },
   get postgridKey() { return process.env.POSTGRID_API_KEY ?? ''; },
+  // Starts the test lab on GitHub from the admin (Settings → Test runs → Run now).
+  get githubDispatchToken() { return process.env.GITHUB_DISPATCH_TOKEN ?? ''; },
+  get githubRepo() { return process.env.GITHUB_REPO || 'artsscheduler-gif/scheduler'; },
 };

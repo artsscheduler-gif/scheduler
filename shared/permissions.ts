@@ -43,7 +43,7 @@ const ACTION_ROLE: Record<string, Role> = {
   matches: 'developer', 'match-dismiss': 'developer',
   level: 'developer', export: 'developer', 'workbook-apply': 'developer',
   'team-list': 'developer', 'team-invite': 'developer', 'team-remove': 'developer', 'team-role': 'developer', 'team-reset-mfa': 'developer',
-  'outbox-clear': 'developer', 'audit-item': 'developer',
+  'outbox-clear': 'developer', 'audit-item': 'developer', 'lab-run': 'developer',
 };
 
 export function minRoleFor(action: string): Role {

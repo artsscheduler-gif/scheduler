@@ -37,6 +37,13 @@ describe.skipIf(!up)('Phase 4: admin console', () => {
     expect(await page.getByRole('link', { name: 'Team' }).count()).toBe(0);
     expect(await page.getByRole('link', { name: 'Customers' }).count()).toBe(0);
     expect(await page.getByRole('link', { name: 'Settings' }).count()).toBe(1);
+    // Settings shows Chris the shop settings only: no developer tabs.
+    await page.getByRole('link', { name: 'Settings' }).click();
+    await page.getByRole('heading', { name: 'Services' }).waitFor();
+    expect(await page.getByRole('link', { name: 'Test runs' }).count()).toBe(0);
+    expect(await page.getByRole('link', { name: 'Activity' }).count()).toBe(0);
+    await page.goto(`${BASE}/admin/settings/team`);
+    await page.getByText('That page isn’t available for your role.').waitFor();
   });
 
   it('signs in with MFA enrollment, approves a request, and every page renders', async () => {
@@ -115,11 +122,22 @@ describe.skipIf(!up)('Phase 4: admin console', () => {
     const [b] = await sql`select status from arts.bookings`;
     expect(b.status).toBe('confirmed');
 
-    for (const [path, text] of [['customers', 'Pick a customer.'], ['settings', 'Services'], ['activity', 'Changes'], ['export', 'Export'], ['book', 'Phone booking'], ['help', 'How to use the admin']]) {
+    for (const [path, text] of [['customers', 'Pick a customer.'], ['settings', 'Services'], ['activity', 'Changes'], ['export', 'Export'], ['settings/test-runs', 'Test runs'], ['book', 'Phone booking'], ['help', 'How to use the admin']]) {
       await page.goto(`${BASE}/admin/${path}`);
       await page.getByText(text).first().waitFor();
-      if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-${path}.png`, fullPage: true });
+      if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-${path.replace("/", "-")}.png`, fullPage: true });
     }
+    // A saved lab run opens to its details.
+    await sql`insert into arts.lab_runs (source, status, seed, days, broken, findings, stats, checks)
+      values ('local', 'failed', 42, 42, ${sql.json([{ rule: 'day capacity', detail: '2026-12-01: 1900 > 1800', day: '2026-11-20' }] as any)},
+        ${sql.json({ 'two people on one phone': { count: 2, examples: ['Pat Doe booked as Sam Doe'] } } as any)}, ${sql.json({ bookings: 500 } as any)},
+        ${sql.json([{ name: 'merge then undo', group: 'customer merge', status: 'failed', message: 'Counterexample: […]' }] as any)})`;
+    await page.goto(`${BASE}/admin/settings/test-runs`);
+    await page.getByRole('row', { name: /Rule broken/ }).getByRole('button', { name: 'Details' }).click();
+    await page.getByText('day capacity').waitFor();
+    await page.getByText('Counterexample: […]').waitFor();
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-test-run-detail.png`, fullPage: true });
+
     // Excel round trip: download the workbook, change a service's minutes, upload, preview, save.
     await page.goto(`${BASE}/admin/export`);
     const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download workbook (.xlsx)' }).click()]);

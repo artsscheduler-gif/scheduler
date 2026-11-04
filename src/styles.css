@@ -494,3 +494,26 @@ button.day.on { background: var(--brand); color: var(--on-brand); border-color: 
 .cust-details summary { cursor: pointer; color: var(--brand); font-weight: 600; }
 .cust-card h3 { margin: 12px 0 4px; font-size: 0.95rem; }
 .plain { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 0.92rem; }
+
+/* Settings tabs and the Simulator's view switch */
+.subtabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+.subtabs a { padding: 8px 12px; color: var(--muted); text-decoration: none; border-bottom: 3px solid transparent; margin-bottom: -1px; font-weight: 600; }
+.subtabs a:hover { color: var(--ink); }
+.subtabs a.on { color: var(--brand); border-bottom-color: var(--brand); }
+.segmented { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; margin-bottom: 14px; }
+.segmented button { border: 0; background: var(--card); padding: 7px 14px; font: inherit; cursor: pointer; color: var(--ink); }
+.segmented button + button { border-left: 1px solid var(--line-strong); }
+.segmented button.on { background: var(--brand); color: var(--on-brand); }
+
+/* Settings → Test runs */
+.badge.bad { background: var(--bad-bg); color: var(--bad); }
+.runs-tbl tr.on td { background: #f3f1ec; }
+.run-detail h4 { margin: 16px 0 6px; }
+.run-detail .checks { list-style: none; padding: 0; }
+.run-detail .checks li { margin: 4px 0; }
+.run-msg { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 0.78rem; background: var(--bad-bg); padding: 8px; border-radius: 6px; max-height: 260px; overflow: auto; }
+.table-scroll { overflow-x: auto; }
+.trend-tbl td:not(:first-child), .trend-tbl th:not(:first-child) { text-align: right; }
+@media (max-width: 640px) {
+  .runs-tbl th:nth-child(4), .runs-tbl td:nth-child(4), .runs-tbl th:nth-child(6), .runs-tbl td:nth-child(6) { display: none; }
+}

@@ -15,6 +15,7 @@ import { normalizePhone, normalizeEmail } from '../shared/phone.js';
 import { toCsv, EXPORTS } from './export.js';
 import { approveBatch, postcardPreview, postcardProof, postcardStatus, testPostcard } from './reminders.js';
 import { simulatorAction } from './simulator.js';
+import { labRun } from './lab-runs.js';
 
 export interface Admin { id: string; email: string; role: Role; label: string }
 
@@ -600,6 +601,7 @@ export async function adminAction(req: Req, action: string, body: unknown): Prom
     case 'block': return timeBlock(a, body);
     case 'workbook-apply': return workbookApply(a, body);
     case 'audit-item': return auditItem(a, body);
+    case 'lab-run': return labRun(a, body);
     case 'rule': return reminderRule(a, body);
     case 'export': return exportCsv(a, body);
     case 'batch-approve': return approveBatch(a, body);

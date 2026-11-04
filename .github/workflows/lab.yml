@@ -1,8 +1,8 @@
 name: Test lab
 # Every night: six simulated weeks at the shop and the randomized rule checks,
-# with a new random seed each time, so it keeps finding new situations. A
-# failure emails the repo owner; the report says how to replay it
-# (LAB_SEED=<seed> npm run lab). Run it by hand from the Actions tab too.
+# with a new random seed each time, so it keeps finding new situations. The
+# result is saved to staging (Settings → Test runs in the admin), and a broken
+# rule lands on the Checklist. "Run now" in the admin starts this too.
 on:
   schedule:
     - cron: '0 8 * * *' # 3–4am in Allentown
@@ -10,6 +10,12 @@ on:
     inputs:
       seed:
         description: Replay a seed (blank = random)
+        required: false
+      request_id:
+        description: Admin request this run answers (set by "Run now")
+        required: false
+      source:
+        description: manual or replay (set by "Run now")
         required: false
 
 jobs:
@@ -28,10 +34,21 @@ jobs:
       - run: npm ci
       - run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,realtime,supavisor
       - run: node scripts/write-local-env.mjs
-      - run: npm run lab
+      - name: Run the lab
+        id: lab
+        continue-on-error: true
+        run: npm run lab -- --reporter=default --reporter=json --outputFile=tests/lab/out/vitest.json
         env:
           LAB_SEED: ${{ inputs.seed }}
           LAB_RUNS: 100
+      - name: Save the result to staging
+        if: always()
+        run: npx tsx scripts/lab-report.ts
+        env:
+          REPORT_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+          REPORT_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SERVICE_ROLE_KEY }}
+          LAB_REQUEST_ID: ${{ inputs.request_id }}
+          LAB_SOURCE: ${{ inputs.source }}
       - name: Keep the report
         if: always()
         uses: actions/upload-artifact@v4
@@ -39,3 +56,6 @@ jobs:
           name: lab-report
           path: tests/lab/out/
           retention-days: 30
+      # Fail the job (GitHub emails the owner) when a rule broke.
+      - if: steps.lab.outcome == 'failure'
+        run: exit 1
