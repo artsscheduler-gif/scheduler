@@ -16,7 +16,7 @@ jobs:
           cache: npm
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.95.4
       - run: npm ci
       - run: npm run typecheck
       - run: npm audit --audit-level=high

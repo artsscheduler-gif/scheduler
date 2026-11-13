@@ -30,7 +30,7 @@ jobs:
           cache: npm
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.95.4
       - run: npm ci
       - run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,realtime,supavisor
       - run: node scripts/write-local-env.mjs
