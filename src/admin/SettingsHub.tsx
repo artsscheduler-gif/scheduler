@@ -17,7 +17,7 @@ import { atLeast, type Role } from '../../shared/permissions';
 // bar at all; the developer's tools live in the other tabs.
 const TABS: { path: string; label: string; min: Role; staging?: boolean; page: ReactElement }[] = [
   { path: '', label: 'Shop', min: 'owner', page: <Settings /> },
-  { path: 'simulator', label: 'Simulator', min: 'developer', staging: true, page: <SimulatorHub /> },
+  { path: 'simulator', label: 'Simulator', min: 'owner', staging: true, page: <SimulatorHub /> },
   { path: 'test-runs', label: 'Test runs', min: 'developer', page: <TestRuns /> },
   { path: 'activity', label: 'Activity', min: 'developer', page: <Activity /> },
   { path: 'export', label: 'Export', min: 'developer', page: <Export /> },

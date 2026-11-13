@@ -43,10 +43,12 @@ const ACTION_ROLE: Record<string, Role> = {
   matches: 'developer', 'match-dismiss': 'developer',
   level: 'developer', export: 'developer', 'workbook-apply': 'developer',
   'team-list': 'developer', 'team-invite': 'developer', 'team-remove': 'developer', 'team-role': 'developer', 'team-reset-mfa': 'developer',
-  'outbox-clear': 'developer', 'audit-item': 'developer', 'lab-run': 'developer',
+  'outbox-clear': 'owner', 'audit-item': 'developer', 'lab-run': 'developer',
 };
 
 export function minRoleFor(action: string): Role {
-  if (action.startsWith('sim-')) return 'developer';
+  // Staging test tools: owners use them too (the shared test login is an owner). The
+  // simulator itself refuses to run outside staging.
+  if (action.startsWith('sim-')) return 'owner';
   return ACTION_ROLE[action] ?? 'developer';
 }

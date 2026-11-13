@@ -35,6 +35,14 @@ describe('staging gate', () => {
     await expect(adminAction({ headers: {}, method: 'POST' } as any, 'sim-status', {})).rejects.toMatchObject({ status: 401 });
   });
 
+  it('lets an owner (the shared test login) use the simulator, but not staff', async () => {
+    const owner = (await adminToken('owner', false)).token;
+    await expect(adminAction(reqWith(owner), 'sim-status', {})).resolves.toBeTruthy();
+    await expect(adminAction(reqWith(owner), 'outbox-clear', {})).resolves.toBeTruthy();
+    const staff = (await adminToken('staff', false)).token;
+    await expect(adminAction(reqWith(staff), 'sim-status', {})).rejects.toMatchObject({ status: 403 });
+  });
+
   it('still requires an MFA-verified admin', async () => {
     const nomfa = (await adminToken('developer', false)).token;
     await expect(adminAction(reqWith(nomfa), 'sim-status', {})).rejects.toMatchObject({ status: 403 });
