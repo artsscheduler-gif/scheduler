@@ -35,6 +35,26 @@ describe('Epicor import commit', () => {
     expect(await counts()).toEqual(after1);
   });
 
+  it('messy rows imported twice add nothing the second time (lab seed 867011912)', async () => {
+    // Found by the nightly test lab on 2026-11-17: the second import added a vehicle.
+    const E = { 'Customer ID': '', 'Customer Name': '', Email: '', Phone: '', Address: '', City: '', State: '', Zip: '', Year: '', Make: '', Model: '', 'Last Service Date': '', 'Last Service Type': '', Mileage: '', 'Email Opt Out': '', 'Mail Opt Out': '' };
+    const rows = [
+      { ...E, 'Customer ID': 'C1', 'Customer Name': 'Nguyễn Văn An', Email: 'BOB@EXAMPLE.COM ', Phone: '(610) 555-0101', Year: 'n/a', 'Last Service Date': '1/1/1995' },
+      { ...E, 'Customer Name': 'Nguyễn Văn An', Address: '9 W. Walnut St., Apt 2', City: 'ALLENTOWN', State: 'XX', Zip: '18104-1234', Year: 'n/a', Model: 'F-150' },
+      { ...E, 'Customer Name': '李 伟', Email: 'BOB@EXAMPLE.COM ', Phone: '(610) 555-0101', Address: '9 W. Walnut St., Apt 2', Zip: '18104-1234', 'Last Service Date': '02/30/2024' },
+      { ...E, Email: 'a@a.aa', Phone: '(610) 555-0101', 'Last Service Date': '02/30/2024' },
+    ];
+    const once = async (tag: string) => {
+      const ctx = await loadImportContext();
+      return commitImport(planImport(rows, mapping, ctx.services, ctx.existing), tag);
+    };
+    expect((await once('first')).failed).toEqual([]);
+    const after1 = await counts();
+    const second = await once('second');
+    expect({ created: second.created, vehicles: second.vehicles, history: second.history, failed: second.failed }).toEqual({ created: 0, vehicles: 0, history: 0, failed: [] });
+    expect(await counts()).toEqual(after1);
+  });
+
   it('a newer export adds only the new service records', async () => {
     await run(`${HEADER}\n2001,Pat Doe,pat@example.com,6105550111,1 Main St,Easton,PA,18042,2015,Honda,Fit,03/01/2026,LOF,1000,,\n`);
     const r = await run(`${HEADER}\n2001,Pat Doe,pat@example.com,6105550111,1 Main St,Easton,PA,18042,2015,Honda,Fit,03/01/2026,LOF,1000,,\n2001,Pat Doe,pat@example.com,6105550111,1 Main St,Easton,PA,18042,2015,Honda,Fit,09/01/2026,LOF,5000,,\n`);
