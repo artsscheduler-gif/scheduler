@@ -27,11 +27,11 @@
     "smoke:staging": "tsx scripts/smoke-staging.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.118.0",
+    "@supabase/supabase-js": "^2.119.2",
     "qrcode": "^1.5.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-router": "^8.5.1",
+    "react-router": "^8.5.2",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
@@ -39,14 +39,14 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@vitejs/plugin-react": "^6.1.2",
-    "fast-check": "^4.10.2",
-    "otpauth": "^9.5.2",
-    "playwright": "^1.64.1",
-    "postgres": "^4.0.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "fast-check": "^4.10.3",
+    "otpauth": "^9.6.0",
+    "playwright": "^1.65.1",
+    "postgres": "^4.1.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "vite": "^8.3.5",
+    "vite": "^8.3.8",
     "vitest": "^4.1.12"
   }
 }
