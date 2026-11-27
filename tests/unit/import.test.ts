@@ -76,3 +76,31 @@ describe('normalizers', () => {
     expect(parseDate('2/29/2025', 'MM/DD/YYYY')).toBeNull();
   });
 });
+
+describe('NAPA TRACS customer export (real column layout, invented people)', () => {
+  const tracs = JSON.parse(readFileSync('import/tracs-customers-mapping.json', 'utf8')) as Mapping;
+  const p = planImport(csvObjects(readFileSync('tests/fixtures/tracs-customers-sample.csv', 'utf8')), tracs, services, []);
+
+  it('builds "First Last" names, keeps business names, and picks the cell phone first', () => {
+    expect(p.customers.map((c) => [c.name, c.phone])).toEqual([
+      ['Pat & Lee Sample', '+16105550111'],
+      ['Test Fleet Co', '+16105550120'],
+      ['Kim Noemail', null],
+    ]);
+    expect(p.customers[1]).toMatchObject({ address_line1: '200 SAMPLE AVE', address_line2: 'STE 4', city: 'EMMAUS', postal_code: '18049' });
+  });
+
+  it('treats CIsOkToEmail=False as an email opt-out', () => {
+    expect(p.customers.map((c) => c.email_opt_out)).toEqual([false, false, true]);
+  });
+
+  it('turns Last Serviced into one visit with no service type', () => {
+    expect(p.customers[0].history).toEqual([{ vehicle_key: null, service_id: null, raw_service: '', service_date: '2026-03-02', mileage: null, row: 2 }]);
+    expect(p.customers[2].history).toEqual([]);
+    expect(p.unmappedServices).toEqual({});
+  });
+
+  it('rejects a customer with no way to reach them', () => {
+    expect(p.rejected.map((r) => [r.row, r.reason])).toEqual([[5, 'no usable email, phone, or complete address']]);
+  });
+});

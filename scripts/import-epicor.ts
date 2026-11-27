@@ -14,10 +14,10 @@ const args = process.argv.slice(2);
 const arg = (k: string) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : undefined; };
 const file = arg('--file');
 if (!file) {
-  console.error('Usage: npm run import:epicor -- --file <export.csv> [--mapping import/epicor-mapping.json] [--commit]');
+  console.error('Usage: npm run import:epicor -- --file <export.csv> [--mapping import/tracs-customers-mapping.json] [--commit]');
   process.exit(1);
 }
-const mapping = JSON.parse(readFileSync(arg('--mapping') ?? 'import/epicor-mapping.json', 'utf8')) as Mapping;
+const mapping = JSON.parse(readFileSync(arg('--mapping') ?? 'import/tracs-customers-mapping.json', 'utf8')) as Mapping;
 const { loadImportContext, commitImport } = await import('../server/import-db.js');
 const ctx = await loadImportContext();
 const plan = planImport(csvObjects(readFileSync(file, 'utf8')), mapping, ctx.services, ctx.existing);

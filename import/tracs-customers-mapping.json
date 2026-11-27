@@ -1,0 +1,29 @@
+{
+  "_comment": "NAPA TRACS 'Customer Export List' (CustomerExportList.csv), confirmed against the real export on 2026-11-27. One row per customer. No vehicles or service lines: 'Last Serviced' becomes one visit with no service type. 'Customer Name' is LAST, FIRST, so the name is built from First Name + Last Name; businesses have only Customer Name. CIsOkToEmail is an opt-in: False means opted out.",
+  "columns": {
+    "customer_id": [],
+    "name": ["Customer Name"],
+    "first_name": ["First Name"],
+    "last_name": ["Last Name"],
+    "email": ["Email"],
+    "phone": ["CellPhone", "HomePhone", "WorkPhone", "AltPhone1", "AltPhone2"],
+    "address1": ["Street1"],
+    "address2": ["Street2"],
+    "city": ["City"],
+    "state": ["State"],
+    "zip": ["Zip"],
+    "vehicle_year": [],
+    "vehicle_make": [],
+    "vehicle_model": [],
+    "service_date": ["Last Serviced"],
+    "service_type": [],
+    "mileage": [],
+    "email_opt_out": [],
+    "mail_opt_out": [],
+    "email_ok": ["CIsOkToEmail"]
+  },
+  "services": {},
+  "truthy": ["y", "yes", "true", "1", "x"],
+  "falsy": ["n", "no", "false", "0"],
+  "dateFormat": "MM/DD/YYYY"
+}

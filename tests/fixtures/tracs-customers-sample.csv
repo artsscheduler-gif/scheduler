@@ -1,0 +1,5 @@
+Type,Customer Name,First Name,Last Name,Company Name,Customer Group,Street1,Street2,City,State,Zip,Business Street1,Business Street2,Business City,Business State,Business Zip,Email,Title,Date Created,Last Serviced,PO Required,Full Pay Required,Tax Exempt,Tax Class,Active,WorkPhone,HomePhone,CellPhone,AltPhone1,AltPhone2,Notes,Payment Due Days,Grace Days,Credit Limit,CIsOkToEmail,Membership Number,Membership Expiration Date
+Individual,"SAMPLE, PAT & LEE",PAT & LEE,SAMPLE,,,100 EXAMPLE STREET,,ALLENTOWN,PA,18106,,,,,,pat@example.com,,12/1/2019 9:00:00 AM,3/2/2026 4:01:00 PM,False,False,False,Default,True,,610-555-0110,(610) 555-0111,,,,0,30,0.00,True,,
+Business,TEST FLEET CO,,,TEST FLEET CO,,200 SAMPLE AVE,SUITE 4,EMMAUS,PA,18049,,,,,,,,1/5/2020 8:00:00 AM,11/14/2025 10:30:00 AM,False,False,False,Default,True,6105550120,,,,,,0,30,0.00,True,,
+Individual,"NOEMAIL, KIM",KIM,NOEMAIL,,,300 DEMO RD,,OREFIELD,PA,18069,,,,,,kim@example.com,,6/1/2021 1:00:00 PM,,False,False,False,Default,True,,,,,,,0,30,0.00,False,,
+Individual,"GHOST, AL",AL,GHOST,,,,,,,,,,,,,,,6/1/2021 1:00:00 PM,8/9/2022 1:00:00 PM,False,False,False,Default,True,,,,,,,0,30,0.00,True,,

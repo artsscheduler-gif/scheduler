@@ -5,18 +5,21 @@ import { normalizeEmail, normalizePhone } from '../shared/phone.js';
 
 export interface Mapping {
   // Our field -> Epicor column header (first matching header wins).
-  columns: Record<FieldName, string[]>;
+  columns: Partial<Record<FieldName, string[]>>;
   // Epicor service code/name (case-insensitive) -> our service name. Codes in
   // services.epicor_codes are also matched.
   services: Record<string, string>;
   // Values that mean "yes" in opt-out columns.
   truthy: string[];
+  // Values that mean "no" in opt-in columns (email_ok). Defaults to n/no/false/0.
+  falsy?: string[];
   dateFormat: 'MM/DD/YYYY' | 'YYYY-MM-DD';
 }
 
 export type FieldName =
   | 'customer_id' | 'name' | 'first_name' | 'last_name' | 'email' | 'phone' | 'address1' | 'address2' | 'city' | 'state' | 'zip'
-  | 'vehicle_year' | 'vehicle_make' | 'vehicle_model' | 'service_date' | 'service_type' | 'mileage' | 'email_opt_out' | 'mail_opt_out';
+  | 'vehicle_year' | 'vehicle_make' | 'vehicle_model' | 'service_date' | 'service_type' | 'mileage' | 'email_opt_out' | 'mail_opt_out'
+  | 'email_ok'; // opt-in column (TRACS CIsOkToEmail): a "no" opts the customer out of email
 
 export interface ServiceRef { id: string; name: string; epicor_codes: string[] }
 
@@ -121,6 +124,8 @@ export function planImport(
 ): ImportPlan {
   const truthy = new Set(mapping.truthy.map((t) => t.toLowerCase()));
   const yes = (v: string) => truthy.has(v.trim().toLowerCase());
+  const falsy = new Set((mapping.falsy ?? ['n', 'no', 'false', '0']).map((t) => t.toLowerCase()));
+  const no = (v: string) => falsy.has(v.trim().toLowerCase());
   const byServiceName = new Map(services.map((s) => [s.name.toLowerCase(), s.id]));
   const byCode = new Map<string, string>();
   for (const s of services) for (const c of s.epicor_codes) byCode.set(c.toLowerCase(), s.id);
@@ -138,7 +143,10 @@ export function planImport(
   rows.forEach((raw, i) => {
     const row = i + 2; // 1-based plus header line
     const get = (f: FieldName) => pick(raw, mapping.columns[f]);
-    const name = get('name') || [get('first_name'), get('last_name')].filter(Boolean).join(' ');
+    // TRACS "Customer Name" is "LAST, FIRST": when both parts are given, use them.
+    const first = get('first_name');
+    const last = get('last_name');
+    const name = (first && last ? `${first} ${last}` : '') || get('name') || [first, last].filter(Boolean).join(' ');
     if (!name) return plan.rejected.push({ row, reason: 'no customer name', data: raw });
     const emailRaw = get('email');
     const phoneRaw = get('phone');
@@ -156,7 +164,10 @@ export function planImport(
     }
 
     const epicorId = get('customer_id') || null;
-    const key = epicorId ? `id:${epicorId}` : email ? `email:${email}` : phone ? `phone:${phone}` : `name:${name.toLowerCase()}|${line1}`;
+    // Without an ID, rows group on contact plus name: household members who
+    // share an email or phone stay separate people (flagged as duplicates).
+    const who = name.toLowerCase().replace(/\s+/g, ' ');
+    const key = epicorId ? `id:${epicorId}` : email ? `email:${email}|${who}` : phone ? `phone:${phone}|${who}` : `name:${who}|${line1}`;
     let c = customers.get(key);
     if (!c) {
       c = {
@@ -171,7 +182,7 @@ export function planImport(
     }
     c.rows.push(row);
     // Opt-outs carry over: one "yes" on any row opts the customer out.
-    if (yes(get('email_opt_out'))) c.email_opt_out = true;
+    if (yes(get('email_opt_out')) || no(get('email_ok'))) c.email_opt_out = true;
     if (yes(get('mail_opt_out'))) c.mail_opt_out = true;
 
     const yearRaw = Number(get('vehicle_year')) || null;
