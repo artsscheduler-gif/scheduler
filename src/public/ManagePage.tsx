@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from './api';
-import { CallUs, KindPicker, ServicePicker, Shell, SlotPicker, telHref, useConfig, type Picked } from './components';
+import { CallUs, KindPicker, NotesLabel, needsDescription, ServicePicker, Shell, SlotPicker, telHref, useConfig, type Picked } from './components';
 
 interface Version {
   status: string;
@@ -207,14 +207,14 @@ export function ManagePage() {
           <h1>Change services</h1>
           <ServicePicker services={config.services} selected={serviceIds} onChange={setServiceIds} />
           <label className="field">
-            <span>Anything else we should know? <span className="muted">(optional)</span></span>
+            <NotesLabel required={needsDescription(config.services, serviceIds)} />
             <textarea value={notes} rows={3} maxLength={view.notes_max_length} onChange={(e) => setNotes(e.target.value)} />
           </label>
           <div className="actions">
             <button className="btn big" onClick={() => go('view')}>Back</button>
             <button
               className="btn primary big"
-              disabled={serviceIds.length === 0 || busy}
+              disabled={serviceIds.length === 0 || busy || (needsDescription(config.services, serviceIds) && !notes.trim())}
               onClick={() => run(() => api.changeServices({ t, service_ids: serviceIds, customer_notes: notes }), 'sent')}
             >
               Request change

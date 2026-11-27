@@ -147,7 +147,7 @@ async function bookings(a: Admin, body: unknown): Promise<Result> {
     return { service_id: V.uuid(x.service_id, 'slot.service_id'), ...V.slot(x) };
   })();
   const s = await getSettings();
-  const { data: svcs } = await db().from('services').select('id, wait_eligible').eq('active', true);
+  const { data: svcs } = await db().from('services').select('id, wait_eligible, needs_description').eq('active', true);
   const { data: existing } = await db().from('customers').select('name, email, phone, vehicles(year, make, model)').like('email', `%@${SIM_DOMAIN}`).is('merged_into', null).limit(500);
   const phones = await freePhones(n);
   const made: { booking_id: string; status: string; date: string }[] = [];
@@ -157,7 +157,7 @@ async function bookings(a: Admin, body: unknown): Promise<Result> {
     const returning = existing?.length && chance(0.5) ? pick(existing) : null;
     const who = returning ? { name: returning.name, email: returning.email!, phone: returning.phone! } : { ...fakePerson(i), phone: phones[i] };
     const car = returning?.vehicles?.[0] ?? (() => { const [make, model] = pick(CARS); return { year: 2010 + Math.floor(rand() * 15), make, model }; })();
-    const svc = fixed ? { id: fixed.service_id, wait_eligible: fixed.kind === 'wait' } : pick(svcs ?? []);
+    const svc = fixed ? { id: fixed.service_id, wait_eligible: fixed.kind === 'wait', needs_description: false } : pick(svcs ?? []);
     const kind = fixed ? fixed.kind : svc.wait_eligible && chance(0.5) ? 'wait' : 'dropoff';
     let date = fixed?.date ?? '';
     let start: string | null = fixed?.start_time ?? null;
@@ -175,7 +175,7 @@ async function bookings(a: Admin, body: unknown): Promise<Result> {
     }
     const r = await rpc<{ ok: boolean; booking_id?: string; status?: string; violations?: string[] }>('create_booking', {
       p: {
-        date, kind, start_time: start, service_ids: [svc.id], customer_notes: pick(NOTES),
+        date, kind, start_time: start, service_ids: [svc.id], customer_notes: svc.needs_description ? pick(NOTES.filter(Boolean)) : pick(NOTES),
         customer: who, vehicle: { year: car.year, make: car.make, model: car.model, notes: '' },
         created_by_type: 'public', source: 'sim', actor: { type: 'customer', label: who.name },
       },

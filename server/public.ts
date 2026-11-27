@@ -49,11 +49,19 @@ export async function getAvailability(params: URLSearchParams, ip: string): Prom
   return { status: 200, body: await availability(services, date, exclude) };
 }
 
+// A "Something else" service only makes sense with a description of the problem.
+async function requireDescription(serviceIds: string[], notes: string) {
+  if (notes.trim()) return;
+  const { data } = await db().from('services').select('id').in('id', serviceIds).eq('needs_description', true).limit(1);
+  if (data?.length) throw new V.ValidationError('customer_notes', 'tell us what you need');
+}
+
 // ---- book -----------------------------------------------------------------
 
 export async function postBook(body: unknown, ip: string): Promise<Result> {
   const s = await getSettings();
   const input = V.publicBooking(body, s.notes_max_length);
+  await requireDescription(input.service_ids, input.customer_notes);
   await limit(`book:ip:${ip}`, s.rate_limit_ip_per_hour, 3600);
   // Turnstile before the per-contact limits, so nobody can burn a customer's
   // daily allowance (and lock them out) without passing the check.
@@ -211,6 +219,7 @@ async function submitChange(
   const latest = r.pending ?? r.confirmed!;
   const l = (await loadBooking(latest.id))!;
   const n = next(latest, l.services.map((x) => x.id));
+  await requireDescription(n.service_ids, n.customer_notes);
   // The new time must also be one the customer could still change online.
   if (!withinCutoff(s, { ...latest, ...n.slot })) return { status: 409, body: { error: 'too_soon', cutoff_hours: s.change_cutoff_hours } };
   const res = await rpc<{ ok: boolean; booking_id?: string; violations?: string[] }>('create_booking', {

@@ -200,7 +200,7 @@ export async function publicConfig() {
   const s = await getSettings();
   const { data: services } = await db()
     .from('services')
-    .select('id, name, description, wait_eligible')
+    .select('id, name, description, wait_eligible, needs_description')
     .eq('active', true)
     .order('sort_order');
   return {

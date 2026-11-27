@@ -364,7 +364,7 @@ export async function updateSettings(a: Admin, body: unknown): Promise<Result> {
 
 // Validates one service without saving it.
 export function checkService(body: unknown) {
-  const b = V.obj(body, ['id', 'name', 'description', 'duration_minutes', 'wait_eligible', 'daily_cap', 'lead_days', 'reminder_interval_months', 'sort_order', 'active', 'epicor_codes']);
+  const b = V.obj(body, ['id', 'name', 'description', 'duration_minutes', 'wait_eligible', 'daily_cap', 'lead_days', 'reminder_interval_months', 'sort_order', 'active', 'epicor_codes', 'needs_description']);
   const row: Record<string, unknown> = {
     name: V.str(b.name, 'name', { max: 60 }),
     description: V.str(b.description, 'description', { max: 200, optional: true }),
@@ -376,6 +376,8 @@ export function checkService(body: unknown) {
     sort_order: V.int(b.sort_order ?? 0, 'sort_order', 0, 1000),
     active: b.active === undefined ? true : V.bool(b.active, 'active'),
   };
+  // Optional so a save that doesn't know the field (the workbook) leaves it alone.
+  if (b.needs_description !== undefined) row.needs_description = V.bool(b.needs_description, 'needs_description');
   if (Array.isArray(b.epicor_codes)) row.epicor_codes = b.epicor_codes.map((c, i) => V.str(c, `epicor_codes[${i}]`, { max: 40 }));
   return { b, row };
 }

@@ -111,6 +111,16 @@ describe('Public booking', () => {
     await expect(postBook(body({ phone: '12' }), '10.0.0.6')).rejects.toThrow(/phone/);
   });
 
+  it('"Something else" needs a description of the problem', async () => {
+    const other = await serviceId('Something else');
+    const b = body({ service_ids: [other], kind: 'dropoff', start_time: '10:00' });
+    await expect(postBook({ ...b, customer_notes: '   ' }, '10.0.0.9')).rejects.toThrow(/tell us what you need/);
+    const r = await postBook({ ...b, customer_notes: 'Clunk from the front left over bumps' }, '10.0.0.9');
+    expect(r.status).toBe(200);
+    const { data } = await service.from('bookings').select('customer_notes, status').eq('customer_notes', 'Clunk from the front left over bumps').single();
+    expect(data).toMatchObject({ customer_notes: 'Clunk from the front left over bumps', status: 'requested' });
+  });
+
   it('a taken slot returns slot_unavailable', async () => {
     await sql`update arts.shop_settings set waiter_lanes = 1`;
     await postBook(body(), '10.0.0.7');

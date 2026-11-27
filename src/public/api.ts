@@ -1,4 +1,4 @@
-export interface Service { id: string; name: string; description: string; wait_eligible: boolean }
+export interface Service { id: string; name: string; description: string; wait_eligible: boolean; needs_description?: boolean }
 export interface PublicConfig {
   shop_name: string;
   shop_phone: string;

@@ -114,6 +114,17 @@ export function isOutage(e: unknown) {
   return !(e instanceof ApiError) || e.status === 0 || e.status >= 500 || e.status === 429;
 }
 
+// True when a picked service (e.g. "Something else") needs the customer to describe it.
+export function needsDescription(services: Service[], selected: string[]) {
+  return services.some((s) => s.needs_description && selected.includes(s.id));
+}
+
+export function NotesLabel({ required }: { required: boolean }) {
+  return required
+    ? <span>What do you need? <span className="muted">(required for “Something else”)</span></span>
+    : <span>Anything else we should know? <span className="muted">(optional)</span></span>;
+}
+
 export function ServicePicker({
   services, selected, onChange,
 }: { services: Service[]; selected: string[]; onChange: (ids: string[]) => void }) {

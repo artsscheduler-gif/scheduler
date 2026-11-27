@@ -166,6 +166,7 @@ function ServiceEditor({ row, onSaved }: { row: Partial<ServiceRow>; onSaved: ()
         description: String(f.get('description') ?? ''),
         duration_minutes: Number(f.get('duration_minutes')),
         wait_eligible: f.get('wait_eligible') === 'on',
+        needs_description: f.get('needs_description') === 'on',
         daily_cap: num('daily_cap'),
         lead_days: num('lead_days'),
         reminder_interval_months: num('reminder_interval_months'),
@@ -209,6 +210,7 @@ function ServiceEditor({ row, onSaved }: { row: Partial<ServiceRow>; onSaved: ()
         </label>
       </div>
       <label className="check-row"><input type="checkbox" name="wait_eligible" defaultChecked={row.wait_eligible ?? false} /> Customers can wait for this</label>
+      <label className="check-row"><input type="checkbox" name="needs_description" defaultChecked={row.needs_description ?? false} /> Customer must describe what they need (for “Something else”)</label>
       <details className="svc-more">
         <summary>More</summary>
         <div className="svc-grid">

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api, ApiError } from './api';
-import { CallUs, KindPicker, ServicePicker, Shell, SlotPicker, Turnstile, useConfig, type Picked } from './components';
+import { CallUs, KindPicker, NotesLabel, needsDescription, ServicePicker, Shell, SlotPicker, Turnstile, useConfig, type Picked } from './components';
 import { VehicleFields } from './vehicle';
 import { FindMyCars, useReturningCustomer } from './returning';
 import { formatDate, formatTime } from '../../shared/time';
@@ -140,6 +140,7 @@ export function BookingApp() {
     );
   }
 
+  const describe = needsDescription(config.services, serviceIds);
   const errFor = (field: string) => fieldError === field || fieldError?.startsWith(`${field}.`);
 
   return (
@@ -150,18 +151,19 @@ export function BookingApp() {
           <p className="lede">Pick one or more.</p>
           <ServicePicker services={config.services} selected={serviceIds} onChange={(ids) => { setServiceIds(ids); setSlot(null); }} />
           <label className="field">
-            <span>Anything else we should know? <span className="muted">(optional)</span></span>
+            <NotesLabel required={describe} />
             <textarea
               value={notes}
+              required={describe}
               maxLength={config.notes_max_length}
               rows={3}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Noises, warning lights, when it started…"
+              placeholder={describe ? 'What is going on with the car? Noises, warning lights, when it started…' : 'Noises, warning lights, when it started…'}
             />
             <span className="count">{notes.length}/{config.notes_max_length}</span>
           </label>
           <div className="actions">
-            <button className="btn primary big" disabled={serviceIds.length === 0} onClick={() => setStep(2)}>Next</button>
+            <button className="btn primary big" disabled={serviceIds.length === 0 || (describe && !notes.trim())} onClick={() => setStep(2)}>Next</button>
           </div>
         </section>
       )}

@@ -5,6 +5,7 @@ import { describeViolation } from '../../shared/rules';
 
 export interface Settings { [k: string]: any }
 export interface ServiceRow {
+  needs_description?: boolean;
   id: string; name: string; description: string; duration_minutes: number; wait_eligible: boolean;
   daily_cap: number | null; lead_days: number | null; reminder_interval_months: number | null;
   approval_level: 'approve' | 'notify' | 'digest'; approvals_in_a_row: number; level_since: string;
