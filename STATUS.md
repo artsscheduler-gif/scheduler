@@ -1,5 +1,5 @@
 # Status
-Last updated: 2026-11-24
+Last updated: 2026-11-27
 
 ## Live
 - Staging: https://arts.jvtestspace.com (HTTP 200). Also https://arts-staging.vercel.app (HTTP 200).
@@ -10,7 +10,11 @@ Last updated: 2026-11-24
 - Last commit 2026-11-20: `9c3105c` re-import lands on the same customer.
 
 ## Done this session
-- Backfilled this STATUS.md from the code, README, git log and specs (no code changes).
+- Demo with Chris on 2026-11-27 went well. Physical mailers matter most to the shop: a Christmas card and scheduled service reminders.
+- Loaded the real NAPA TRACS customer export into staging (file kept in gitignored `import/private/`). New default mapping `import/tracs-customers-mapping.json`. Counts and findings are in MAILING.md (local only, repo is public).
+- The import now keeps household members who share an email or phone as separate people.
+- Real logo from the shop's vector PDF: `public/logo.png` (web), `public/logo-print.png` (postcards), source in `brand/`. Committed and pushed, not deployed yet.
+- Draft Christmas and scheduled-service postcards: `brand/mockups/sheet.png`.
 
 ## Open
 - The source of truth is the owner-only Checklist tab in the admin (table `arts.audit_items`, synced by `scripts/audit-sync.ts`). Read it with `npx tsx scripts/audit-sync.ts dump`.
@@ -18,9 +22,18 @@ Last updated: 2026-11-24
 - Claude items: health check is open and calls Resend/Lob on every hit; tighten CSP; add "Forgot password?"; backup gaps; point the hourly pg_cron job at the production URL.
 - Security items wait until the build is functionally complete (DECISIONS.md #73).
 - README "Launch checklist" lists the code-side launch steps.
-- Untracked files `.DS_Store` and `11157logo.png` are in the repo root (left alone).
+- Untracked in the repo root: `.DS_Store`, `11157logo.png`, `good logo.pdf` (copied to `brand/`), DEMO.md, MAILING.md. MAILING.md stays out of git on purpose.
+- Mailing: the app only mails reminder postcards. A Christmas card needs a "one-off mailing" in the Postcards tab. See MAILING.md.
+- The TRACS customer export has no vehicles, service types, or mileage. Imported visits have no service type, so no reminders fire from them yet.
+- Low-mileage customers get inaccurate time-based reminders (Chris, 2026-11-27). Parked. Needs mileage data.
+- The Simulator's "Reset test site" wipes every customer, TRACS ones too. Re-run the import with staging env afterward.
+- Staging now holds real customer contact details. The shared test login should get a stronger password or be removed.
 
 ## Decisions pending (Jake)
+- Mailing (MAILING.md): Christmas this year or next; who gets it; scheduled-service card from last visit only, or wait for vehicle and service data; who pays PostGrid.
+- Ask Chris: can TRACS export vehicles and repair orders with mileage, or a "next service due" date?
+- Chris was invited to staging as owner on 2026-11-25 (artssvc@gmail.com). He must open the email, set a password, and sign in once before Friday. Confirm he did.
+- Demo sign-in: have a working owner login on the presenting laptop before Friday.
 - Spec Open Items block the production launch. The spec file is not in this repo.
 - Paid Supabase plan, and Vercel Pro or Art's own Vercel account (Hobby is non-commercial).
 - Register artsservicecenter.com; verify it in Resend; real Turnstile keys; PostGrid live key.
