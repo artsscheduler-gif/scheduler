@@ -236,7 +236,7 @@ curl -s -X PUT "$SUPABASE_URL/auth/v1/admin/users/<user id>" \
 unset PW
 ```
 
-Then give the person their email and password. They can change it after they sign in.
+Use at least 12 characters. Then give the person their email and password. There is no change-password screen once signed in (it comes with "Forgot password?" in the security pass), so pick one they can keep.
 
 **Remove**: Supabase dashboard → Authentication → Users → the user → Delete. Their past actions stay in the audit log.
 
