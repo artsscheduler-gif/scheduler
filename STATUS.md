@@ -36,7 +36,7 @@ Last updated: 2026-11-27
 ## Decisions pending (Jake)
 - Mailing (MAILING.md): Christmas this year or next; who gets it; scheduled-service card from last visit only, or wait for vehicle and service data; who pays PostGrid.
 - Ask Chris: can TRACS export vehicles and repair orders with mileage, or a "next service due" date?
-- Chris was invited to staging as owner on 2026-11-25 (artssvc@gmail.com). He must open the email, set a password, and sign in once before Friday. Confirm he did.
+- Set Chris's password (artssvc@gmail.com, owner). Checked 2026-11-27: the 11-25 invite was never accepted and he has never signed in. Jake chose to assign a password instead of resending the invite. The command is in the 2026-11-27 session notes and in the README section below.
 - Demo sign-in: have a working owner login on the presenting laptop before Friday.
 - Spec Open Items block the production launch. The spec file is not in this repo.
 - Paid Supabase plan, and Vercel Pro or Art's own Vercel account (Hobby is non-commercial).

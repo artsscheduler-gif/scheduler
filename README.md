@@ -222,7 +222,21 @@ npm run admin:add -- --email chris@artsservicecenter.com --role staff --name Chr
 npm run admin:add -- --email jake@... --role owner --name Jake
 ```
 
-The person gets an email, sets a password, and on first sign-in must scan a QR code with an authenticator app. There's no way to use admin without it.
+The person gets an email and sets a password. Only developers also set up an authenticator app; owners and staff sign in with email and password.
+
+**Set a password directly** (no email; use when an invite was missed). It asks for the password without showing it, so it stays out of chat and shell history. Find the user's id under Authentication → Users.
+
+```bash
+set -a; source <(grep -E '^(SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY)=' .env.staging.local); set +a
+read -s "PW?New password: "; echo
+curl -s -X PUT "$SUPABASE_URL/auth/v1/admin/users/<user id>" \
+  -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" -H "Content-Type: application/json" \
+  -d "$(PW="$PW" python3 -c 'import json,os; print(json.dumps({"password": os.environ["PW"], "email_confirm": True}))')" \
+  | python3 -c 'import json,sys; u=json.load(sys.stdin); print(u.get("email"), "confirmed:", bool(u.get("email_confirmed_at")), u.get("msg") or "")'
+unset PW
+```
+
+Then give the person their email and password. They can change it after they sign in.
 
 **Remove**: Supabase dashboard → Authentication → Users → the user → Delete. Their past actions stay in the audit log.
 
