@@ -13,9 +13,9 @@ Last updated: 2026-11-27
 - Demo with Chris on 2026-11-27 went well. Physical mailers matter most to the shop: a Christmas card and scheduled service reminders.
 - Loaded the real NAPA TRACS customer export into staging (file kept in gitignored `import/private/`). New default mapping `import/tracs-customers-mapping.json`. Counts and findings are in MAILING.md (local only, repo is public).
 - The import now keeps household members who share an email or phone as separate people.
-- Real logo from the shop's vector PDF: `public/logo.png` (web), `public/logo-print.png` (postcards), source in `brand/`. Committed and pushed, not deployed yet.
+- Real logo from the shop's vector PDF: `public/logo.png` (web), `public/logo-print.png` (postcards), source in `brand/`. Deployed 2026-11-27.
 - Draft Christmas and scheduled-service postcards: `brand/mockups/sheet.png`.
-- "Something else" now requires a description (booking page, change-services page, and server). It still goes to Chris for approval like every booking, which matches today's request-and-approve flow on the current site. Per-service toggle in Settings. Migration applied to staging; code committed, not deployed yet.
+- "Something else" now requires a description (booking page, change-services page, and server). It still goes to Chris for approval like every booking, which matches today's request-and-approve flow on the current site. Per-service toggle in Settings. Deployed and verified on staging 2026-11-27.
 - Staging migrations 000023 (import address tiebreak, never applied before) and 20261127000001 applied with `supabase db push`.
 - Made-up cars on staging: 2,250 cars for the TRACS customers, notes "TEST DATA: made-up car". The imported last visits are linked to a car with a made-up mileage, about 1 in 6 low-mileage on purpose. Remove with `APP_ENV=staging npx tsx scripts/dummy-cars.ts --remove`.
 - Local only: `phase4-admin` checklist-tick and `phase6-backup` restore tests fail on this Mac with or without today's changes (leftover row, local storage). CI is green.
@@ -34,7 +34,6 @@ Last updated: 2026-11-27
 - Staging now holds real customer contact details. The shared test login should get a stronger password or be removed.
 
 ## Decisions pending (Jake)
-- Deploy staging. Order matters only in reverse: the migration is already on staging, so deploying the code now is safe.
 - Mailing (MAILING.md): Christmas this year or next; who gets it; scheduled-service card from last visit only, or wait for vehicle and service data; who pays PostGrid.
 - Ask Chris: can TRACS export vehicles and repair orders with mileage, or a "next service due" date?
 - Chris was invited to staging as owner on 2026-11-25 (artssvc@gmail.com). He must open the email, set a password, and sign in once before Friday. Confirm he did.
